@@ -1,66 +1,54 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+'use client';
 
-export default function Home() {
+import { useState } from 'react';
+import SubmitForm from '@/components/SubmitForm';
+import InsightCard from '@/components/InsightCard';
+import { Submission } from '@/lib/types';
+
+export default function HomePage() {
+  const [result, setResult] = useState<Submission | null>(null);
+  const [loading, setLoading] = useState(false);
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="page-container">
+      <div className="home-hero">
+        <h1>
+          Transform Requests into <span>Structured Insights</span>
+        </h1>
+        <p>
+          Paste any stakeholder request below. Our AI will classify it, extract key issues,
+          and generate actionable next steps — instantly.
+        </p>
+      </div>
+
+      <div className="home-content">
+        <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
+          <SubmitForm
+            onResult={(data) => setResult(data as Submission)}
+            onLoading={setLoading}
+          />
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+
+        {loading && (
+          <div className="glass-card" style={{ textAlign: 'center', padding: '2rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', color: 'var(--text-secondary)' }}>
+              <div className="spinner" style={{ borderColor: 'rgba(124,58,237,0.3)', borderTopColor: '#7c3aed' }} />
+              Processing with AI...
+            </div>
+          </div>
+        )}
+
+        {result && !loading && <InsightCard data={result} />}
+
+        {!result && !loading && (
+          <div className="glass-card" style={{ textAlign: 'center', padding: '2.5rem', opacity: 0.7 }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🧠</div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+              Submit a stakeholder request above to see AI-powered insights
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
