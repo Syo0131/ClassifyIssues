@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, Schema, Type } from '@google/generative-ai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { AnalysisResult } from './types';
 
 const SYSTEM_PROMPT = `You are an expert business analyst AI. Given a stakeholder request, you must analyze it and return a JSON object with the following fields:

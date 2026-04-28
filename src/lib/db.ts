@@ -1,11 +1,11 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import fs from 'fs';
 import { AnalysisResult, Submission, SubmissionRow, DashboardStats } from './types';
 
 const DB_PATH = path.join(process.cwd(), 'data', 'insights.db');
 
 function getDb(): Database.Database {
-  const fs = require('fs');
   const dir = path.dirname(DB_PATH);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
