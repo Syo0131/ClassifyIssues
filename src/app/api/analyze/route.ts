@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeRequest } from '@/lib/ai';
-import { createSubmission } from '@/lib/db';
+import { createTicket } from '@/lib/db';
+import { auth } from '@/auth';
 
-export async function POST(request: NextRequest) {
+export const POST = auth(async function POST(req) {
+  if (!req.auth) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   try {
-    const body = await request.json();
-    const { text } = body;
+    const body = await req.json();
+    const { text, project } = body;
 
     if (!text || typeof text !== 'string' || text.trim().length < 10) {
       return NextResponse.json(
@@ -14,10 +19,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const userId = (req.auth.user as any).id;
     const analysis = await analyzeRequest(text.trim());
-    const submission = createSubmission(text.trim(), analysis);
+    const ticket = createTicket(Number(userId), project || 'General', text.trim(), analysis);
 
-    return NextResponse.json(submission, { status: 201 });
+    return NextResponse.json(ticket, { status: 201 });
   } catch (error) {
     console.error('Analyze API error:', error);
     return NextResponse.json(
@@ -25,4 +31,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}) as any;

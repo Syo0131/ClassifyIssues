@@ -1,124 +1,174 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import StatsGrid from '@/components/StatsGrid';
-import SubmissionTable from '@/components/SubmissionTable';
-import { DashboardStats, Submission } from '@/lib/types';
+import TicketTable from '@/components/TicketTable';
+import CustomSelect from '@/components/CustomSelect';
+import { Ticket } from '@/lib/types';
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Filter States
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterPriority, setFilterPriority] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('active'); // active means != closed
+  const [sortOrder, setSortOrder] = useState('newest');
 
-  const fetchData = useCallback(async () => {
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10; // Increased since there are no stats taking up space
+
+  const fetchTickets = useCallback(async () => {
     try {
-      const [statsRes, subsRes] = await Promise.all([
-        fetch('/api/stats'),
-        fetch('/api/submissions'),
-      ]);
-      const statsData = await statsRes.json();
-      const subsData = await subsRes.json();
-      setStats(statsData);
-      setSubmissions(subsData);
+      const res = await fetch('/api/tickets');
+      const data = await res.json();
+      setTickets(data);
     } catch (err) {
-      console.error('Failed to fetch dashboard data:', err);
+      console.error('Failed to fetch tickets:', err);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchData();
-  }, [fetchData]);
+    fetchTickets();
+  }, [fetchTickets]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterPriority, filterStatus, sortOrder]);
 
   if (loading) {
     return (
-      <div className="page-container">
+      <div className="page-container" style={{ maxWidth: '1200px' }}>
         <div className="page-header">
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">Loading insights...</p>
+          <h1 className="page-title">Bandeja de Tickets</h1>
+          <p className="page-subtitle">Cargando tu historial...</p>
         </div>
-        <div className="stats-grid">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="stat-card" style={{ minHeight: '100px' }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(255,255,255,0.04)', marginBottom: '0.75rem' }} />
-              <div style={{ width: '60px', height: '24px', borderRadius: '4px', background: 'rgba(255,255,255,0.04)', marginBottom: '0.35rem' }} />
-              <div style={{ width: '100px', height: '12px', borderRadius: '4px', background: 'rgba(255,255,255,0.04)' }} />
-            </div>
-          ))}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}>
+          <div className="spinner" style={{ width: '40px', height: '40px', color: 'var(--primary)', borderWidth: '4px' }} />
         </div>
       </div>
     );
   }
 
-  const maxCategoryCount = stats ? Math.max(...Object.values(stats.byCategory), 1) : 1;
+  // Apply filters
+  let filteredTickets = tickets.filter(t => {
+    if (filterStatus === 'active' && t.status === 'closed') return false;
+    if (filterStatus !== 'all' && filterStatus !== 'active' && t.status !== filterStatus) return false;
+    if (filterPriority !== 'all' && t.priority !== filterPriority) return false;
+    
+    if (searchTerm) {
+      const lowerSearch = searchTerm.toLowerCase();
+      const matchId = t.id.toString().includes(lowerSearch);
+      const matchText = t.raw_text.toLowerCase().includes(lowerSearch);
+      const matchSummary = t.summary?.toLowerCase().includes(lowerSearch) || false;
+      if (!matchId && !matchText && !matchSummary) return false;
+    }
+    return true;
+  });
+
+  // Apply sorting
+  filteredTickets.sort((a, b) => {
+    const dateA = new Date(a.created_at).getTime();
+    const dateB = new Date(b.created_at).getTime();
+    return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
+  });
+
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredTickets.length / ITEMS_PER_PAGE);
+  const paginatedTickets = filteredTickets.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
 
   return (
-    <div className="page-container">
-      <div className="page-header">
-        <h1 className="page-title">Dashboard</h1>
-        <p className="page-subtitle">Overview of all analyzed stakeholder requests</p>
+    <div className="page-container" style={{ maxWidth: '1200px' }}>
+      <div className="page-header" style={{ marginBottom: '1.5rem' }}>
+        <h1 className="page-title">Bandeja de Tickets</h1>
+        <p className="page-subtitle">Gestiona y da seguimiento a todas las solicitudes activas.</p>
       </div>
 
-      {stats && <StatsGrid stats={stats} />}
-
-      {stats && Object.keys(stats.byCategory).length > 0 && (
-        <div className="dashboard-grid">
-          <div className="glass-card">
-            <div className="chart-title">📊 By Category</div>
-            <div className="chart-bars">
-              {Object.entries(stats.byCategory)
-                .sort((a, b) => b[1] - a[1])
-                .map(([cat, count]) => (
-                  <div key={cat} className="chart-row">
-                    <div className="chart-label">{cat}</div>
-                    <div className="chart-bar-track">
-                      <div className="chart-bar-fill" style={{ width: `${(count / maxCategoryCount) * 100}%` }}>
-                        <span className="chart-bar-value">{count}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-            </div>
+      <div className="card" style={{ padding: '1rem 1.5rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+          
+          <div style={{ position: 'relative', flex: '1' }}>
+            <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
+            <input 
+              type="text" 
+              className="form-input"
+              placeholder="Buscar por número o palabra clave..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ width: '100%', paddingLeft: '2.5rem', borderRadius: '100px', fontSize: '0.85rem' }}
+            />
           </div>
+          
+          <div className="filter-bar" style={{ display: 'flex', flexWrap: 'nowrap', gap: '0.5rem' }}>
+            <CustomSelect 
+              value={filterStatus} 
+              onChange={setFilterStatus}
+              options={[
+                { value: 'all', label: 'Todos los Estados' },
+                { value: 'active', label: 'Solo Activos' },
+                { value: 'open', label: 'Abierto' },
+                { value: 'waiting_on_client', label: 'Esperando Cliente' },
+                { value: 'closed', label: 'Finalizado' }
+              ]}
+            />
 
-          <div className="glass-card">
-            <div className="chart-title">🎯 By Priority</div>
-            <div className="chart-bars">
-              {['critical', 'high', 'medium', 'low'].map(p => {
-                const count = stats.byPriority[p] || 0;
-                const maxP = Math.max(...Object.values(stats.byPriority), 1);
-                return (
-                  <div key={p} className="chart-row">
-                    <div className="chart-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span className={`badge badge-priority ${p}`} style={{ fontSize: '0.7rem' }}>
-                        {p.charAt(0).toUpperCase() + p.slice(1)}
-                      </span>
-                    </div>
-                    <div className="chart-bar-track">
-                      <div
-                        className="chart-bar-fill"
-                        style={{
-                          width: `${(count / maxP) * 100}%`,
-                          background: p === 'critical' ? 'linear-gradient(135deg, #dc2626, #f43f5e)'
-                            : p === 'high' ? 'linear-gradient(135deg, #d97706, #f59e0b)'
-                            : p === 'medium' ? 'linear-gradient(135deg, #2563eb, #3b82f6)'
-                            : 'linear-gradient(135deg, #059669, #10b981)',
-                        }}
-                      >
-                        <span className="chart-bar-value">{count}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <CustomSelect 
+              value={filterPriority} 
+              onChange={setFilterPriority}
+              options={[
+                { value: 'all', label: 'Cualquier Prioridad' },
+                { value: 'critical', label: 'Crítica' },
+                { value: 'high', label: 'Alta' },
+                { value: 'medium', label: 'Media' },
+                { value: 'low', label: 'Baja' }
+              ]}
+            />
+
+            <CustomSelect 
+              value={sortOrder} 
+              onChange={setSortOrder}
+              options={[
+                { value: 'newest', label: 'Más Recientes' },
+                { value: 'oldest', label: 'Más Antiguos' }
+              ]}
+            />
           </div>
         </div>
-      )}
+      </div>
 
-      <SubmissionTable submissions={submissions} />
+      <TicketTable tickets={paginatedTickets} />
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '1.5rem' }}>
+          <button 
+            className="btn-secondary" 
+            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+            disabled={currentPage === 1}
+          >
+            Anterior
+          </button>
+          <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+            Página {currentPage} de {totalPages}
+          </span>
+          <button 
+            className="btn-secondary" 
+            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+            disabled={currentPage === totalPages}
+          >
+            Siguiente
+          </button>
+        </div>
+      )}
     </div>
   );
 }
