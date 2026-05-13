@@ -45,6 +45,9 @@ function getDb(): Database.Database {
       priority TEXT DEFAULT 'medium',
       status TEXT DEFAULT 'open',
       source TEXT DEFAULT 'unknown',
+      closed_by_user_id INTEGER,
+      last_updated_by_user_id INTEGER,
+      last_updated_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
@@ -59,6 +62,19 @@ function getDb(): Database.Database {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
   `);
+
+  const ticketColumns = db.prepare('PRAGMA table_info(tickets)').all() as { name: string }[];
+  const ticketColumnNames = new Set(ticketColumns.map(column => column.name));
+
+  if (!ticketColumnNames.has('closed_by_user_id')) {
+    db.exec('ALTER TABLE tickets ADD COLUMN closed_by_user_id INTEGER');
+  }
+  if (!ticketColumnNames.has('last_updated_by_user_id')) {
+    db.exec('ALTER TABLE tickets ADD COLUMN last_updated_by_user_id INTEGER');
+  }
+  if (!ticketColumnNames.has('last_updated_at')) {
+    db.exec('ALTER TABLE tickets ADD COLUMN last_updated_at DATETIME');
+  }
 
   return db;
 }
@@ -197,11 +213,57 @@ export function getTicketById(id: number): Ticket | null {
   }
 }
 
-export function updateTicketStatus(id: number, status: TicketStatus): boolean {
+export function updateTicketStatus(id: number, status: TicketStatus, actingUserId: number): boolean {
   const db = getDb();
   try {
-    const result = db.prepare('UPDATE tickets SET status = ? WHERE id = ?').run(status, id);
+    let query = 'UPDATE tickets SET status = ?, last_updated_by_user_id = ?, last_updated_at = CURRENT_TIMESTAMP';
+    const params: (string | number)[] = [status, actingUserId];
+
+    if (status === 'closed') {
+      query += ', closed_by_user_id = ?';
+      params.push(actingUserId);
+    } else {
+      // If status is changed from closed to open/waiting, clear closed_by_user_id
+      query += ', closed_by_user_id = NULL'; 
+    }
+
+    query += ' WHERE id = ?';
+    params.push(id);
+
+    const result = db.prepare(query).run(...params);
     return result.changes > 0;
+  } finally {
+    db.close();
+  }
+}
+
+export function getTicketsManagedByTechnician(technicianId: number): Ticket[] {
+  const db = getDb();
+  try {
+    const rows = db.prepare(`
+      SELECT t.*, u.username, u.projects as userProjects 
+      FROM tickets t 
+      JOIN users u ON t.user_id = u.id 
+      WHERE t.last_updated_by_user_id = ?
+      ORDER BY t.created_at DESC
+    `).all(technicianId) as TicketRow[];
+    return rows.map(rowToTicket);
+  } finally {
+    db.close();
+  }
+}
+
+export function getTicketsClosedByTechnician(technicianId: number): Ticket[] {
+  const db = getDb();
+  try {
+    const rows = db.prepare(`
+      SELECT t.*, u.username, u.projects as userProjects 
+      FROM tickets t 
+      JOIN users u ON t.user_id = u.id 
+      WHERE t.closed_by_user_id = ?
+      ORDER BY t.created_at DESC
+    `).all(technicianId) as TicketRow[];
+    return rows.map(rowToTicket);
   } finally {
     db.close();
   }
@@ -255,6 +317,10 @@ export function getStats(userId?: number): DashboardStats {
       `SELECT status, COUNT(*) as count FROM tickets ${whereClause} GROUP BY status`
     ).all(...params) as { status: string; count: number }[];
 
+    const closedCount = (db.prepare(
+      `SELECT COUNT(*) as count FROM tickets ${whereClause} ${whereClause ? 'AND' : 'WHERE'} status = 'closed'`
+    ).get(...params) as { count: number }).count;
+
     const recentCount = (db.prepare(
       `SELECT COUNT(*) as count FROM tickets ${whereClause} ${userId ? 'AND' : 'WHERE'} created_at >= datetime('now', '-7 days')`
     ).get(...params) as { count: number }).count;
@@ -268,7 +334,7 @@ export function getStats(userId?: number): DashboardStats {
     const byStatus: Record<string, number> = {};
     statusRows.forEach(r => { byStatus[r.status] = r.count; });
 
-    return { total, byCategory, byPriority, byStatus, recentCount };
+    return { total, byCategory, byPriority, byStatus, closedCount, recentCount };
   } finally {
     db.close();
   }

@@ -1,9 +1,12 @@
 import { auth } from "@/auth";
 import HomeClient from "./HomeClient";
+import { getUserByUsername } from "@/lib/db";
 
 export default async function HomePage() {
   const session = await auth();
-  const projects = session?.user ? (session.user as any).projects : [];
+  const username = session?.user?.name;
+  const dbUser = username ? getUserByUsername(username) : null;
+  const projects = dbUser?.projects ?? [];
 
   return <HomeClient projects={projects} />;
 }

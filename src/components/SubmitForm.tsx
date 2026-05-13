@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import CustomSelect from './CustomSelect';
 
 interface SubmitFormProps {
   projects?: string[];
@@ -66,30 +67,13 @@ export default function SubmitForm({ projects = [], onResult, onLoading }: Submi
       {projects.length > 0 && (
         <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Proyecto:</span>
-          <select 
-            value={selectedProject} 
-            onChange={(e) => setSelectedProject(e.target.value)}
-            style={{ 
-              padding: '0.5rem 1rem', 
-              borderRadius: '100px', 
-              border: '1px solid var(--border-subtle)', 
-              background: 'var(--bg-card)', 
-              color: 'var(--text-primary)', 
-              fontSize: '0.85rem', 
-              outline: 'none',
-              appearance: 'none',
-              paddingRight: '2rem',
-              backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'16\' height=\'16\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'%3E%3C/polyline%3E%3C/svg%3E")',
-              backgroundRepeat: 'no-repeat',
-              backgroundPosition: 'right 0.75rem center',
-              backgroundSize: '14px',
-              cursor: 'pointer'
-            }}
-          >
-            {projects.map(p => (
-              <option key={p} value={p} style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>{p}</option>
-            ))}
-          </select>
+          <CustomSelect
+            value={selectedProject}
+            onChange={setSelectedProject}
+            options={projects.map(project => ({ value: project, label: project }))}
+            integratedMenu
+            minimal
+          />
         </div>
       )}
 

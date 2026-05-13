@@ -22,7 +22,7 @@ export const PATCH = auth(async function PATCH(req, { params }) {
       return NextResponse.json({ error: "Status is required" }, { status: 400 });
     }
 
-    const updated = updateTicketStatus(Number(id), status);
+    const updated = updateTicketStatus(Number(id), status, Number(user.id));
     if (!updated) {
       return NextResponse.json({ error: "Ticket not found or no changes" }, { status: 404 });
     }

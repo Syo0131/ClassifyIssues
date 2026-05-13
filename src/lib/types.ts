@@ -33,6 +33,9 @@ export interface Ticket {
   priority: 'low' | 'medium' | 'high' | 'critical';
   status: TicketStatus;
   source: string;
+  closed_by_user_id?: number;
+  last_updated_by_user_id?: number;
+  last_updated_at?: string;
   created_at: string;
 }
 
@@ -51,6 +54,9 @@ export interface TicketRow {
   priority: string;
   status: string;
   source: string;
+  closed_by_user_id?: number;
+  last_updated_by_user_id?: number;
+  last_updated_at?: string;
   created_at: string;
 }
 
@@ -65,10 +71,12 @@ export interface Comment {
 }
 
 export interface DashboardStats {
-  total: number;
+  total: number; // Total tickets created by this user
   projects?: string[]; // Added for profile page to show user's projects
   byCategory: Record<string, number>;
   byPriority: Record<string, number>;
   byStatus: Record<string, number>;
+  closedCount?: number;
+  totalClosedByMe?: number; // Tickets closed by this technician
   recentCount: number;
 }

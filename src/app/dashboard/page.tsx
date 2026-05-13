@@ -17,7 +17,7 @@ export default function DashboardPage() {
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 10; // Increased since there are no stats taking up space
+  const ITEMS_PER_PAGE = 10; // Max users per page
 
   const fetchTickets = useCallback(async () => {
     try {
@@ -117,6 +117,8 @@ export default function DashboardPage() {
                 { value: 'waiting_on_client', label: 'Esperando Cliente' },
                 { value: 'closed', label: 'Finalizado' }
               ]}
+              integratedMenu
+              minimal
             />
 
             <CustomSelect 
@@ -129,6 +131,8 @@ export default function DashboardPage() {
                 { value: 'medium', label: 'Media' },
                 { value: 'low', label: 'Baja' }
               ]}
+              integratedMenu
+              minimal
             />
 
             <CustomSelect 
@@ -138,6 +142,8 @@ export default function DashboardPage() {
                 { value: 'newest', label: 'Más Recientes' },
                 { value: 'oldest', label: 'Más Antiguos' }
               ]}
+              integratedMenu
+              minimal
             />
           </div>
         </div>
