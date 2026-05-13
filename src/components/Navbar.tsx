@@ -5,7 +5,7 @@ import NavLinks from "./NavLinks"; // We will create this for active state track
 
 export default async function Navbar() {
   const session = await auth();
-  const role = session ? (session.user as any).role : null;
+  const role = session?.user ? (session.user as any).role : null;
 
   return (
     <nav style={{ 

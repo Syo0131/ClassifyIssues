@@ -5,7 +5,7 @@ import TicketDetailClient from "./TicketDetailClient";
 
 export default async function TicketPage({ params }: { params: { id: string } }) {
   const session = await auth();
-  if (!session) redirect("/login");
+  if (!session || !session.user) redirect("/login");
 
   const { id } = await params as { id: string };
   const ticket = getTicketById(Number(id));
