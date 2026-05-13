@@ -3,21 +3,161 @@
 import { useState, useEffect, useCallback } from 'react';
 import { User } from '@/lib/types';
 
+// Modal component
+function UserFormModal({ isOpen, onClose, user, onSave }: {
+  isOpen: boolean;
+  onClose: () => void;
+  user: User | null;
+  onSave: (payload: any) => Promise<boolean>;
+}) {
+  const [username, setUsername] = useState(user?.username || '');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'user' | 'technician'>(user?.role || 'user');
+  const [projectsInput, setProjectsInput] = useState(user?.projects?.join(', ') || '');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState({ type: '', text: '' });
+
+  useEffect(() => {
+    if (user) {
+      setUsername(user.username);
+      setRole(user.role);
+      setProjectsInput(user.projects?.join(', ') || '');
+      setPassword('');
+    } else {
+      setUsername('');
+      setPassword('');
+      setRole('user');
+      setProjectsInput('');
+    }
+    setMessage({ type: '', text: '' });
+  }, [user]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage({ type: '', text: '' });
+
+    const projects = projectsInput
+      .split(',')
+      .map(p => p.trim())
+      .filter(p => p.length > 0);
+
+    const payload = user 
+      ? { id: user.id, role, projects, password: password || undefined }
+      : { username, password, role, projects };
+
+    const success = await onSave(payload);
+
+    if (success) {
+      setMessage({ type: 'success', text: `Usuario ${user ? 'actualizado' : 'creado'} correctamente.` });
+      // Clear form only if creating a new user
+      if (!user) {
+        setUsername('');
+        setPassword('');
+        setRole('user');
+        setProjectsInput('');
+      }
+      onClose(); // Close modal on success
+    } else {
+      setMessage({ type: 'error', text: `Error al ${user ? 'actualizar' : 'crear'} usuario.` });
+    }
+    setLoading(false);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div className="card" style={{ maxWidth: '500px', width: '100%', padding: '2rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{user ? 'Editar Usuario' : 'Crear Nuevo Usuario'}</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.5rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>&times;</button>
+        </div>
+        
+        {message.text && (
+          <div style={{ 
+            marginBottom: '1.5rem', padding: '1rem', borderRadius: '8px', fontSize: '0.9rem', border: '1px solid',
+            background: message.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+            color: message.type === 'success' ? 'var(--success)' : 'var(--danger)',
+            borderColor: message.type === 'success' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'
+          }}>
+            {message.text}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Nombre de Usuario</label>
+            <input
+              type="text"
+              className="form-input"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              disabled={!!user} // Disable if editing
+              placeholder="Ej: nombre_cliente"
+              style={{ opacity: user ? 0.6 : 1 }}
+            />
+          </div>
+
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">{user ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}</label>
+            <input
+              type="password"
+              className="form-input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required={!user}
+              placeholder={user ? "Dejar en blanco para no cambiar" : "********"}
+            />
+          </div>
+
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Rol del Usuario</label>
+            <select
+              className="form-select"
+              value={role}
+              onChange={(e) => setRole(e.target.value as 'user' | 'technician')}
+            >
+              <option value="user">Usuario (Cliente)</option>
+              <option value="technician">Técnico (Soporte)</option>
+            </select>
+          </div>
+
+          {role === 'user' && (
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Proyectos (Separados por coma)</label>
+              <input
+                type="text"
+                className="form-input"
+                value={projectsInput}
+                onChange={(e) => setProjectsInput(e.target.value)}
+                placeholder="Ej: Alpha, CRM"
+              />
+            </div>
+          )}
+
+          <button type="submit" className="btn-primary" disabled={loading} style={{ width: '100%', marginTop: '0.5rem' }}>
+            {loading ? <div className="spinner" style={{ width: '16px', height: '16px' }} /> : (user ? 'Guardar Cambios' : 'Registrar Usuario')}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// AdminUsersPage Component
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
 
-  // Form State
-  const [isEditing, setIsEditing] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'user' | 'technician'>('user');
-  const [projectsInput, setProjectsInput] = useState('');
-  
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState({ type: '', text: '' });
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 8; // Max users per page
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -35,63 +175,38 @@ export default function AdminUsersPage() {
     fetchUsers();
   }, [fetchUsers]);
 
-  const resetForm = () => {
-    setIsEditing(false);
-    setEditingId(null);
-    setUsername('');
-    setPassword('');
-    setRole('user');
-    setProjectsInput('');
-    setMessage({ type: '', text: '' });
+  const handleCreateUser = () => {
+    setSelectedUser(null);
+    setIsModalOpen(true);
   };
 
-  const handleEditClick = (user: User) => {
-    setIsEditing(true);
-    setEditingId(user.id);
-    setUsername(user.username);
-    setPassword(''); // Don't fetch password, leave blank unless changing
-    setRole(user.role);
-    setProjectsInput(user.projects?.join(', ') || '');
-    setMessage({ type: '', text: '' });
+  const handleEditUser = (user: User) => {
+    setSelectedUser(user);
+    setIsModalOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setMessage({ type: '', text: '' });
-
-    const projects = projectsInput
-      .split(',')
-      .map(p => p.trim())
-      .filter(p => p.length > 0);
-
-    try {
-      const url = '/api/admin/users';
-      const method = isEditing ? 'PATCH' : 'POST';
-      const bodyPayload = isEditing 
-        ? { id: editingId, role, projects, password } 
-        : { username, password, role, projects };
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setMessage({ type: 'success', text: `Usuario ${isEditing ? 'actualizado' : 'creado'} correctamente.` });
-        resetForm();
-        fetchUsers(); // Refresh the list
-      } else {
-        setMessage({ type: 'error', text: data.error || `Error al ${isEditing ? 'actualizar' : 'crear'} usuario.` });
-      }
-    } catch (err) {
-      setMessage({ type: 'error', text: 'Error de conexión.' });
-    } finally {
-      setLoading(false);
+  const handleSaveUser = async (payload: any) => {
+    const method = payload.id ? 'PATCH' : 'POST';
+    const res = await fetch('/api/admin/users', {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      fetchUsers(); // Refresh the list
+      return true;
     }
+    const errorData = await res.json();
+    console.error('Save user error:', errorData.error);
+    return false;
   };
+
+  // Pagination Logic
+  const totalPages = Math.ceil(users.length / ITEMS_PER_PAGE);
+  const paginatedUsers = users.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
 
   return (
     <div className="page-container" style={{ maxWidth: '1200px' }}>
@@ -100,19 +215,20 @@ export default function AdminUsersPage() {
         <p className="page-subtitle">Administra los accesos, roles y proyectos de los clientes y técnicos.</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '2rem', alignItems: 'start' }}>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Usuarios del Sistema</h2>
+          <button onClick={handleCreateUser} className="btn-primary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
+            + Nuevo Usuario
+          </button>
+        </div>
         
-        {/* LISTA DE USUARIOS */}
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-muted)' }}>
-            <h2 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Usuarios Activos</h2>
+        {loadingUsers ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}>
+            <div className="spinner" style={{ color: 'var(--primary)' }} />
           </div>
-          
-          {loadingUsers ? (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}>
-              <div className="spinner" style={{ color: 'var(--primary)' }} />
-            </div>
-          ) : (
+        ) : (
+          <>
             <div className="table-wrapper">
               <table className="table">
                 <thead>
@@ -124,7 +240,7 @@ export default function AdminUsersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => (
+                  {paginatedUsers.map((u) => (
                     <tr key={u.id}>
                       <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{u.username}</td>
                       <td>
@@ -140,7 +256,7 @@ export default function AdminUsersPage() {
                       </td>
                       <td>
                         <button 
-                          onClick={() => handleEditClick(u)}
+                          onClick={() => handleEditUser(u)}
                           className="btn-secondary"
                           style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem' }}
                         >
@@ -159,92 +275,41 @@ export default function AdminUsersPage() {
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
 
-        {/* FORMULARIO */}
-        <div className="card" style={{ position: 'sticky', top: '100px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-            <h2 style={{ fontSize: '1.1rem', fontWeight: 700 }}>
-              {isEditing ? 'Editar Usuario' : 'Crear Usuario'}
-            </h2>
-            {isEditing && (
-              <button onClick={resetForm} style={{ fontSize: '0.8rem', color: 'var(--primary)', cursor: 'pointer', background: 'transparent', border: 'none', fontWeight: 600 }}>
-                Cancelar Edición
-              </button>
-            )}
-          </div>
-          
-          {message.text && (
-            <div style={{ 
-              marginBottom: '1.5rem', padding: '1rem', borderRadius: '8px', fontSize: '0.9rem', border: '1px solid',
-              background: message.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-              color: message.type === 'success' ? 'var(--success)' : 'var(--danger)',
-              borderColor: message.type === 'success' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'
-            }}>
-              {message.text}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">Nombre de Usuario</label>
-              <input
-                type="text"
-                className="form-input"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                disabled={isEditing} // Cannot change username easily in this prototype
-                placeholder="Ej: nombre_cliente"
-                style={{ opacity: isEditing ? 0.6 : 1 }}
-              />
-            </div>
-
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">{isEditing ? 'Nueva Contraseña (Opcional)' : 'Contraseña Temporal'}</label>
-              <input
-                type="password"
-                className="form-input"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required={!isEditing}
-                placeholder={isEditing ? "Dejar en blanco para mantener actual" : "********"}
-              />
-            </div>
-
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">Rol del Usuario</label>
-              <select
-                className="form-select"
-                value={role}
-                onChange={(e) => setRole(e.target.value as 'user' | 'technician')}
-              >
-                <option value="user">Usuario (Cliente)</option>
-                <option value="technician">Técnico (Soporte)</option>
-              </select>
-            </div>
-
-            {role === 'user' && (
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Proyectos (Separados por coma)</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={projectsInput}
-                  onChange={(e) => setProjectsInput(e.target.value)}
-                  placeholder="Ej: Alpha, CRM"
-                />
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', padding: '1rem 1.5rem', borderTop: '1px solid var(--border-subtle)' }}>
+                <button 
+                  className="btn-secondary" 
+                  style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                >
+                  Anterior
+                </button>
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  Página {currentPage} de {totalPages}
+                </span>
+                <button 
+                  className="btn-secondary" 
+                  style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                >
+                  Siguiente
+                </button>
               </div>
             )}
-
-            <button type="submit" className="btn-primary" disabled={loading} style={{ width: '100%', marginTop: '0.5rem' }}>
-              {loading ? <div className="spinner" style={{ width: '16px', height: '16px' }} /> : (isEditing ? 'Guardar Cambios' : 'Registrar Usuario')}
-            </button>
-          </form>
-        </div>
-
+          </>
+        )}
       </div>
+
+      <UserFormModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        user={selectedUser}
+        onSave={handleSaveUser}
+      />
       
       <style jsx>{`
         @media (max-width: 768px) {

@@ -69,7 +69,8 @@ export default function ProfileClient({ user }: { user: any }) {
     }
   };
 
-  const projects = user.projects || [];
+  // Ensure projects are taken from stats, not directly from user prop, as stats are fetched dynamically
+  const projectsToDisplay = stats?.projects || [];
 
   return (
     <div className="page-container" style={{ maxWidth: '800px' }}>
@@ -104,16 +105,18 @@ export default function ProfileClient({ user }: { user: any }) {
 
             <div>
               <h3 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', textTransform: 'uppercase' }}>Proyectos Asignados</h3>
-              {projects.length > 0 ? (
+              {loadingStats ? (
+                <div className="spinner" style={{ width: '20px', height: '20px' }} />
+              ) : projectsToDisplay && projectsToDisplay.length > 0 ? (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  {projects.map((p: string) => (
+                  {projectsToDisplay.map((p: string) => (
                     <span key={p} style={{ background: 'var(--bg-muted)', padding: '0.35rem 0.75rem', borderRadius: '100px', fontSize: '0.85rem', border: '1px solid var(--border-subtle)' }}>
                       {p}
                     </span>
                   ))}
                 </div>
               ) : (
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>General (Sin proyectos específicos)</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>General (Sin proyectos asignados)</p>
               )}
             </div>
           </div>
