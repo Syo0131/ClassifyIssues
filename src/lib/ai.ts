@@ -9,6 +9,11 @@ Instrucciones MUY ESTRICTAS de PRIORIDAD:
 - "medium": Problemas concretos con funciones secundarias, bloqueos menores o consultas técnicas claras.
 - "low": POR DEFECTO para cualquier mensaje vago, quejas sin detalle (ej. "esto no sirve", "está muy largo"), frases de prueba ("test"), comentarios conversacionales, sugerencias o dudas generales. Si no hay un problema técnico claro y descriptivo, DEBE ser "low".
 
+Regla de negocio OBLIGATORIA:
+- La prioridad se define por impacto al sistema/plataforma vendida (web, CRM, portal, app), NO por problemas individuales de hardware del cliente.
+- Casos como "mi PC no funciona", "mi laptop no prende", "mi equipo está lento" deben ser "medium" salvo evidencia clara de caída del sistema vendido para múltiples usuarios.
+- Para usar "critical" debe existir evidencia de impacto global (varios usuarios/empresa/producción detenida).
+
 Campos del JSON:
 - "category": Una de: "Operaciones", "Facturación", "Soporte Técnico", "Producto e Ingeniería", "Seguridad", "Recursos Humanos"
 - "confidence": Número entre 0 y 1.
@@ -73,7 +78,12 @@ export async function analyzeRequest(text: string): Promise<AnalysisResult> {
     if (!content) throw new Error('Empty response from Gemini');
 
     const parsed = JSON.parse(content) as AnalysisResult;
-    return { ...validateResult(parsed), source: 'gemini' };
+    const validated = validateResult(parsed);
+    return {
+      ...validated,
+      priority: applyBusinessPriorityPolicy(text.toLowerCase(), validated.priority),
+      source: 'gemini',
+    };
   } catch (error) {
     console.error('Gemini API error, falling back to mock:', error);
     return mockAnalyze(text);
@@ -124,6 +134,15 @@ const PERSONAL_SCOPE_KEYWORDS = [
   'mi pc', 'mi computadora', 'mi equipo', 'mi laptop', 'mi usuario', 'mi cuenta',
 ];
 
+const HARDWARE_LOCAL_KEYWORDS = [
+  'pc', 'computadora', 'equipo', 'laptop', 'teclado', 'mouse', 'pantalla', 'impresora',
+];
+
+const CORE_SYSTEM_KEYWORDS = [
+  'sistema', 'plataforma', 'web', 'crm', 'portal', 'app', 'aplicacion', 'aplicación',
+  'modulo', 'módulo', 'dashboard', 'servicio',
+];
+
 const HIGH_PRIORITY_KEYWORDS = [
   'no funciona', 'no enciende', 'no prende', 'no puedo entrar', 'error', 'fallo', 'bug',
   'lento', 'importante', 'bloqueado', 'bloqueada',
@@ -131,6 +150,26 @@ const HIGH_PRIORITY_KEYWORDS = [
 
 const MEDIUM_PRIORITY_KEYWORDS = ['ayuda', 'duda', 'consulta', 'configurar', 'ajuste'];
 const LOW_PRIORITY_KEYWORDS = ['gracias', 'me gustaría', 'opcional', 'color', 'test', 'prueba'];
+
+function applyBusinessPriorityPolicy(lower: string, proposed: AnalysisResult['priority']): AnalysisResult['priority'] {
+  const hasCriticalTechSignal = CRITICAL_TECH_KEYWORDS.some(kw => lower.includes(kw));
+  const hasGlobalImpact = GLOBAL_IMPACT_KEYWORDS.some(kw => lower.includes(kw));
+  const isPersonalScope = PERSONAL_SCOPE_KEYWORDS.some(kw => lower.includes(kw));
+  const hasHardwareSignals = HARDWARE_LOCAL_KEYWORDS.some(kw => lower.includes(kw));
+  const hasCoreSystemSignals = CORE_SYSTEM_KEYWORDS.some(kw => lower.includes(kw));
+
+  // Local hardware/user incidents should not be high/critical by default.
+  if ((isPersonalScope || hasHardwareSignals) && !hasCoreSystemSignals) {
+    if (proposed === 'critical' || proposed === 'high') return 'medium';
+  }
+
+  // Critical requires explicit outage + global impact.
+  if (proposed === 'critical' && !(hasCriticalTechSignal && hasGlobalImpact && !isPersonalScope)) {
+    return hasCoreSystemSignals ? 'high' : 'medium';
+  }
+
+  return proposed;
+}
 
 function determineMockPriority(lower: string): AnalysisResult['priority'] {
   const hasCriticalTechSignal = CRITICAL_TECH_KEYWORDS.some(kw => lower.includes(kw));
@@ -144,15 +183,15 @@ function determineMockPriority(lower: string): AnalysisResult['priority'] {
 
   // Personal device/account incidents should not be marked as critical.
   if (isPersonalScope && (lower.includes('no funciona') || lower.includes('no enciende') || lower.includes('no prende'))) {
-    return 'high';
+    return 'medium';
   }
 
-  if (HIGH_PRIORITY_KEYWORDS.some(kw => lower.includes(kw))) return 'high';
-  if (MEDIUM_PRIORITY_KEYWORDS.some(kw => lower.includes(kw))) return 'medium';
-  if (LOW_PRIORITY_KEYWORDS.some(kw => lower.includes(kw))) return 'low';
+  let basePriority: AnalysisResult['priority'] = 'low';
+  if (HIGH_PRIORITY_KEYWORDS.some(kw => lower.includes(kw))) basePriority = 'high';
+  else if (MEDIUM_PRIORITY_KEYWORDS.some(kw => lower.includes(kw))) basePriority = 'medium';
+  else if (LOW_PRIORITY_KEYWORDS.some(kw => lower.includes(kw))) basePriority = 'low';
 
-  // Conservative default for vague requests.
-  return 'low';
+  return applyBusinessPriorityPolicy(lower, basePriority);
 }
 
 function mockAnalyze(text: string): AnalysisResult {
