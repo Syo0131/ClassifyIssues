@@ -22,7 +22,7 @@ export const PATCH = auth(async function PATCH(req, { params }) {
       return NextResponse.json({ error: "Status is required" }, { status: 400 });
     }
 
-    const updated = updateTicketStatus(Number(id), status, Number(user.id));
+    const updated = await updateTicketStatus(Number(id), status, Number(user.id));
     if (!updated) {
       return NextResponse.json({ error: "Ticket not found or no changes" }, { status: 404 });
     }
@@ -42,7 +42,7 @@ export const GET = auth(async function GET(req, { params }) {
   const user = req.auth.user as any;
 
   try {
-    const ticket = getTicketById(Number(id));
+    const ticket = await getTicketById(Number(id));
     if (!ticket) {
       return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
     }

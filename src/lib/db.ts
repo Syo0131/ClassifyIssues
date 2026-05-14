@@ -1,158 +1,224 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
-import { 
-  AnalysisResult, 
-  Ticket, 
-  TicketRow, 
-  DashboardStats, 
-  User, 
+import { Pool, PoolConfig } from 'pg';
+import {
+  AnalysisResult,
+  Ticket,
+  DashboardStats,
+  User,
   Comment,
-  TicketStatus 
+  TicketStatus,
 } from './types';
 
-const DB_PATH = path.join(process.cwd(), 'data', 'insights.db');
+type JsonArrayValue = string[] | unknown[] | string | null | undefined;
 
-function getDb(): Database.Database {
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+declare global {
+  // eslint-disable-next-line no-var
+  var __pgPool: Pool | undefined;
+  // eslint-disable-next-line no-var
+  var __pgSchemaReady: Promise<void> | undefined;
+}
+
+function parseJsonArray(value: JsonArrayValue): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(item => String(item));
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.map(item => String(item)) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function getPoolConfig(): PoolConfig {
+  const connectionString = process.env.DATABASE_URL?.trim();
+  if (connectionString) {
+    const useSsl = (process.env.PGSSL || '').toLowerCase() === 'true';
+    return {
+      connectionString,
+      ssl: useSsl ? { rejectUnauthorized: false } : undefined,
+    };
   }
 
-  const db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
+  const host = process.env.PGHOST?.trim();
+  const port = Number(process.env.PGPORT || 5432);
+  const user = process.env.PGUSER?.trim();
+  const password = process.env.PGPASSWORD ?? '';
+  const database = process.env.PGDATABASE?.trim();
+  const useSsl = (process.env.PGSSL || '').toLowerCase() === 'true';
 
-  // Schema setup
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      role TEXT NOT NULL CHECK(role IN ('user', 'technician')),
-      projects TEXT DEFAULT '[]'
-    );
-
-    CREATE TABLE IF NOT EXISTS tickets (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      project TEXT DEFAULT 'General',
-      raw_text TEXT NOT NULL,
-      category TEXT NOT NULL,
-      confidence REAL DEFAULT 0,
-      issues TEXT DEFAULT '[]',
-      actions TEXT DEFAULT '[]',
-      summary TEXT DEFAULT '',
-      priority TEXT DEFAULT 'medium',
-      status TEXT DEFAULT 'open',
-      source TEXT DEFAULT 'unknown',
-      closed_by_user_id INTEGER,
-      last_updated_by_user_id INTEGER,
-      last_updated_at DATETIME,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS comments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      ticket_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      text TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (ticket_id) REFERENCES tickets(id),
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    );
-  `);
-
-  const ticketColumns = db.prepare('PRAGMA table_info(tickets)').all() as { name: string }[];
-  const ticketColumnNames = new Set(ticketColumns.map(column => column.name));
-
-  if (!ticketColumnNames.has('closed_by_user_id')) {
-    db.exec('ALTER TABLE tickets ADD COLUMN closed_by_user_id INTEGER');
-  }
-  if (!ticketColumnNames.has('last_updated_by_user_id')) {
-    db.exec('ALTER TABLE tickets ADD COLUMN last_updated_by_user_id INTEGER');
-  }
-  if (!ticketColumnNames.has('last_updated_at')) {
-    db.exec('ALTER TABLE tickets ADD COLUMN last_updated_at DATETIME');
+  if (!host || !user || !database) {
+    throw new Error('Postgres configuration missing. Set DATABASE_URL or PGHOST/PGUSER/PGDATABASE in .env.');
   }
 
-  return db;
+  return {
+    host,
+    port,
+    user,
+    password,
+    database,
+    ssl: useSsl ? { rejectUnauthorized: false } : undefined,
+  };
+}
+
+function getPool(): Pool {
+  if (!global.__pgPool) {
+    global.__pgPool = new Pool(getPoolConfig());
+  }
+  return global.__pgPool;
+}
+
+async function ensureSchema(): Promise<void> {
+  if (!global.__pgSchemaReady) {
+    global.__pgSchemaReady = (async () => {
+      const pool = getPool();
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id SERIAL PRIMARY KEY,
+          username TEXT NOT NULL UNIQUE,
+          password_hash TEXT NOT NULL,
+          role TEXT NOT NULL CHECK(role IN ('user', 'technician')),
+          projects JSONB NOT NULL DEFAULT '[]'::jsonb
+        );
+
+        CREATE TABLE IF NOT EXISTS tickets (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id),
+          project TEXT NOT NULL DEFAULT 'General',
+          raw_text TEXT NOT NULL,
+          category TEXT NOT NULL,
+          confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+          issues JSONB NOT NULL DEFAULT '[]'::jsonb,
+          actions JSONB NOT NULL DEFAULT '[]'::jsonb,
+          summary TEXT NOT NULL DEFAULT '',
+          priority TEXT NOT NULL DEFAULT 'medium',
+          status TEXT NOT NULL DEFAULT 'open',
+          source TEXT NOT NULL DEFAULT 'unknown',
+          closed_by_user_id INTEGER,
+          last_updated_by_user_id INTEGER,
+          last_updated_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS comments (
+          id SERIAL PRIMARY KEY,
+          ticket_id INTEGER NOT NULL REFERENCES tickets(id),
+          user_id INTEGER NOT NULL REFERENCES users(id),
+          text TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+      `);
+    })();
+  }
+  await global.__pgSchemaReady;
+}
+
+function rowToTicket(row: any): Ticket {
+  return {
+    ...row,
+    issues: parseJsonArray(row.issues),
+    actions: parseJsonArray(row.actions),
+    priority: row.priority as Ticket['priority'],
+    status: row.status as TicketStatus,
+    userProjects: parseJsonArray(row.userprojects),
+  };
 }
 
 // User Management
-export function getUserByUsername(username: string): User | null {
-  const db = getDb();
-  try {
-    const row = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as any;
-    if (!row) return null;
-    return {
-      ...row,
-      projects: row.projects ? JSON.parse(row.projects) : [],
-    };
-  } finally {
-    db.close();
-  }
+export async function getUserByUsername(username: string): Promise<User | null> {
+  await ensureSchema();
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT id, username, password_hash, role, projects
+     FROM users
+     WHERE username = $1`,
+    [username]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    username: row.username,
+    password_hash: row.password_hash,
+    role: row.role,
+    projects: parseJsonArray(row.projects),
+  };
 }
 
-export function createUser(username: string, passwordHash: string, role: 'user' | 'technician', projects: string[] = []): number {
-  const db = getDb();
-  try {
-    const stmt = db.prepare('INSERT INTO users (username, password_hash, role, projects) VALUES (?, ?, ?, ?)');
-    const result = stmt.run(username, passwordHash, role, JSON.stringify(projects));
-    return result.lastInsertRowid as number;
-  } finally {
-    db.close();
-  }
+export async function createUser(
+  username: string,
+  passwordHash: string,
+  role: 'user' | 'technician',
+  projects: string[] = []
+): Promise<number> {
+  await ensureSchema();
+  const pool = getPool();
+  const result = await pool.query(
+    `INSERT INTO users (username, password_hash, role, projects)
+     VALUES ($1, $2, $3, $4::jsonb)
+     RETURNING id`,
+    [username, passwordHash, role, JSON.stringify(projects)]
+  );
+  return result.rows[0].id;
 }
 
-export function updateUserPassword(userId: number, newPasswordHash: string): boolean {
-  const db = getDb();
-  try {
-    const result = db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newPasswordHash, userId);
-    return result.changes > 0;
-  } finally {
-    db.close();
-  }
+export async function updateUserPassword(userId: number, newPasswordHash: string): Promise<boolean> {
+  await ensureSchema();
+  const pool = getPool();
+  const result = await pool.query(
+    'UPDATE users SET password_hash = $1 WHERE id = $2',
+    [newPasswordHash, userId]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
-export function getAllUsers(): User[] {
-  const db = getDb();
-  try {
-    const rows = db.prepare('SELECT id, username, role, projects FROM users ORDER BY username ASC').all() as any[];
-    return rows.map(row => ({
-      ...row,
-      projects: row.projects ? JSON.parse(row.projects) : [],
-    }));
-  } finally {
-    db.close();
-  }
+export async function getAllUsers(): Promise<User[]> {
+  await ensureSchema();
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT id, username, role, projects
+     FROM users
+     ORDER BY username ASC`
+  );
+  return result.rows.map(row => ({
+    id: row.id,
+    username: row.username,
+    role: row.role,
+    projects: parseJsonArray(row.projects),
+  }));
 }
 
-export function updateUser(id: number, role: 'user' | 'technician', projects: string[] = []): boolean {
-  const db = getDb();
-  try {
-    const result = db.prepare('UPDATE users SET role = ?, projects = ? WHERE id = ?').run(role, JSON.stringify(projects), id);
-    return result.changes > 0;
-  } finally {
-    db.close();
-  }
+export async function updateUser(id: number, role: 'user' | 'technician', projects: string[] = []): Promise<boolean> {
+  await ensureSchema();
+  const pool = getPool();
+  const result = await pool.query(
+    `UPDATE users
+     SET role = $1, projects = $2::jsonb
+     WHERE id = $3`,
+    [role, JSON.stringify(projects), id]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 // Ticket Management
-export function createTicket(
+export async function createTicket(
   userId: number,
   project: string,
   rawText: string,
   analysis: AnalysisResult
-): Ticket {
-  const db = getDb();
-  try {
-    const stmt = db.prepare(`
-      INSERT INTO tickets (user_id, project, raw_text, category, confidence, issues, actions, summary, priority, status, source)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+): Promise<Ticket> {
+  await ensureSchema();
+  const pool = getPool();
 
-    const result = stmt.run(
+  const insertResult = await pool.query(
+    `INSERT INTO tickets (
+       user_id, project, raw_text, category, confidence, issues, actions, summary, priority, status, source
+     )
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11)
+     RETURNING id`,
+    [
       userId,
       project,
       rawText,
@@ -163,191 +229,201 @@ export function createTicket(
       analysis.summary,
       analysis.priority,
       'open',
-      analysis.source
-    );
+      analysis.source,
+    ]
+  );
 
-    const row = db.prepare('SELECT t.*, u.username FROM tickets t JOIN users u ON t.user_id = u.id WHERE t.id = ?').get(result.lastInsertRowid) as TicketRow;
-    return rowToTicket(row);
-  } finally {
-    db.close();
-  }
+  const id = insertResult.rows[0].id;
+  const rowResult = await pool.query(
+    `SELECT t.*, u.username, u.projects AS userProjects
+     FROM tickets t
+     JOIN users u ON t.user_id = u.id
+     WHERE t.id = $1`,
+    [id]
+  );
+
+  return rowToTicket(rowResult.rows[0]);
 }
 
-export function getAllTickets(userId?: number): Ticket[] {
-  const db = getDb();
-  try {
-    let stmt;
-    const query = `
-      SELECT t.*, u.username, u.projects as userProjects 
-      FROM tickets t 
-      JOIN users u ON t.user_id = u.id 
-      ${userId ? 'WHERE t.user_id = ?' : ''} 
-      ORDER BY t.created_at DESC
-    `;
-    if (userId) {
-      stmt = db.prepare(query);
-      const rows = stmt.all(userId) as TicketRow[];
-      return rows.map(rowToTicket);
-    } else {
-      stmt = db.prepare(query);
-      const rows = stmt.all() as TicketRow[];
-      return rows.map(rowToTicket);
-    }
-  } finally {
-    db.close();
-  }
+export async function getAllTickets(userId?: number): Promise<Ticket[]> {
+  await ensureSchema();
+  const pool = getPool();
+  const result = userId
+    ? await pool.query(
+        `SELECT t.*, u.username, u.projects AS userProjects
+         FROM tickets t
+         JOIN users u ON t.user_id = u.id
+         WHERE t.user_id = $1
+         ORDER BY t.created_at DESC`,
+        [userId]
+      )
+    : await pool.query(
+        `SELECT t.*, u.username, u.projects AS userProjects
+         FROM tickets t
+         JOIN users u ON t.user_id = u.id
+         ORDER BY t.created_at DESC`
+      );
+
+  return result.rows.map(rowToTicket);
 }
 
-export function getTicketById(id: number): Ticket | null {
-  const db = getDb();
-  try {
-    const row = db.prepare(`
-      SELECT t.*, u.username, u.projects as userProjects 
-      FROM tickets t 
-      JOIN users u ON t.user_id = u.id 
-      WHERE t.id = ?
-    `).get(id) as TicketRow | undefined;
-    return row ? rowToTicket(row) : null;
-  } finally {
-    db.close();
-  }
+export async function getTicketById(id: number): Promise<Ticket | null> {
+  await ensureSchema();
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT t.*, u.username, u.projects AS userProjects
+     FROM tickets t
+     JOIN users u ON t.user_id = u.id
+     WHERE t.id = $1`,
+    [id]
+  );
+  if (!result.rows[0]) return null;
+  return rowToTicket(result.rows[0]);
 }
 
-export function updateTicketStatus(id: number, status: TicketStatus, actingUserId: number): boolean {
-  const db = getDb();
-  try {
-    let query = 'UPDATE tickets SET status = ?, last_updated_by_user_id = ?, last_updated_at = CURRENT_TIMESTAMP';
-    const params: (string | number)[] = [status, actingUserId];
+export async function updateTicketStatus(id: number, status: TicketStatus, actingUserId: number): Promise<boolean> {
+  await ensureSchema();
+  const pool = getPool();
 
-    if (status === 'closed') {
-      query += ', closed_by_user_id = ?';
-      params.push(actingUserId);
-    } else {
-      // If status is changed from closed to open/waiting, clear closed_by_user_id
-      query += ', closed_by_user_id = NULL'; 
-    }
+  const result =
+    status === 'closed'
+      ? await pool.query(
+          `UPDATE tickets
+           SET status = $1,
+               last_updated_by_user_id = $2,
+               last_updated_at = NOW(),
+               closed_by_user_id = $3
+           WHERE id = $4`,
+          [status, actingUserId, actingUserId, id]
+        )
+      : await pool.query(
+          `UPDATE tickets
+           SET status = $1,
+               last_updated_by_user_id = $2,
+               last_updated_at = NOW(),
+               closed_by_user_id = NULL
+           WHERE id = $3`,
+          [status, actingUserId, id]
+        );
 
-    query += ' WHERE id = ?';
-    params.push(id);
-
-    const result = db.prepare(query).run(...params);
-    return result.changes > 0;
-  } finally {
-    db.close();
-  }
+  return (result.rowCount ?? 0) > 0;
 }
 
-export function getTicketsManagedByTechnician(technicianId: number): Ticket[] {
-  const db = getDb();
-  try {
-    const rows = db.prepare(`
-      SELECT t.*, u.username, u.projects as userProjects 
-      FROM tickets t 
-      JOIN users u ON t.user_id = u.id 
-      WHERE t.last_updated_by_user_id = ?
-      ORDER BY t.created_at DESC
-    `).all(technicianId) as TicketRow[];
-    return rows.map(rowToTicket);
-  } finally {
-    db.close();
-  }
+export async function getTicketsManagedByTechnician(technicianId: number): Promise<Ticket[]> {
+  await ensureSchema();
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT t.*, u.username, u.projects AS userProjects
+     FROM tickets t
+     JOIN users u ON t.user_id = u.id
+     WHERE t.last_updated_by_user_id = $1
+     ORDER BY t.created_at DESC`,
+    [technicianId]
+  );
+  return result.rows.map(rowToTicket);
 }
 
-export function getTicketsClosedByTechnician(technicianId: number): Ticket[] {
-  const db = getDb();
-  try {
-    const rows = db.prepare(`
-      SELECT t.*, u.username, u.projects as userProjects 
-      FROM tickets t 
-      JOIN users u ON t.user_id = u.id 
-      WHERE t.closed_by_user_id = ?
-      ORDER BY t.created_at DESC
-    `).all(technicianId) as TicketRow[];
-    return rows.map(rowToTicket);
-  } finally {
-    db.close();
-  }
+export async function getTicketsClosedByTechnician(technicianId: number): Promise<Ticket[]> {
+  await ensureSchema();
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT t.*, u.username, u.projects AS userProjects
+     FROM tickets t
+     JOIN users u ON t.user_id = u.id
+     WHERE t.closed_by_user_id = $1
+     ORDER BY t.created_at DESC`,
+    [technicianId]
+  );
+  return result.rows.map(rowToTicket);
 }
 
 // Comments Management
-export function createComment(ticketId: number, userId: number, text: string): number {
-  const db = getDb();
-  try {
-    const result = db.prepare('INSERT INTO comments (ticket_id, user_id, text) VALUES (?, ?, ?)')
-      .run(ticketId, userId, text);
-    return result.lastInsertRowid as number;
-  } finally {
-    db.close();
-  }
+export async function createComment(ticketId: number, userId: number, text: string): Promise<number> {
+  await ensureSchema();
+  const pool = getPool();
+  const result = await pool.query(
+    `INSERT INTO comments (ticket_id, user_id, text)
+     VALUES ($1, $2, $3)
+     RETURNING id`,
+    [ticketId, userId, text]
+  );
+  return result.rows[0].id;
 }
 
-export function getCommentsForTicket(ticketId: number): Comment[] {
-  const db = getDb();
-  try {
-    const rows = db.prepare(`
-      SELECT c.*, u.username, u.role 
-      FROM comments c 
-      JOIN users u ON c.user_id = u.id 
-      WHERE c.ticket_id = ? 
-      ORDER BY c.created_at ASC
-    `).all(ticketId) as Comment[];
-    return rows;
-  } finally {
-    db.close();
-  }
+export async function getCommentsForTicket(ticketId: number): Promise<Comment[]> {
+  await ensureSchema();
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT c.id, c.ticket_id, c.user_id, c.text, c.created_at, u.username, u.role
+     FROM comments c
+     JOIN users u ON c.user_id = u.id
+     WHERE c.ticket_id = $1
+     ORDER BY c.created_at ASC`,
+    [ticketId]
+  );
+  return result.rows;
 }
 
-export function getStats(userId?: number): DashboardStats {
-  const db = getDb();
-  try {
-    const whereClause = userId ? 'WHERE user_id = ?' : '';
-    const params = userId ? [userId] : [];
+export async function getStats(userId?: number): Promise<DashboardStats> {
+  await ensureSchema();
+  const pool = getPool();
 
-    const total = (db.prepare(`SELECT COUNT(*) as count FROM tickets ${whereClause}`).get(...params) as { count: number }).count;
+  const totalResult = userId
+    ? await pool.query('SELECT COUNT(*)::int AS count FROM tickets WHERE user_id = $1', [userId])
+    : await pool.query('SELECT COUNT(*)::int AS count FROM tickets');
+  const total = totalResult.rows[0].count;
 
-    const categoryRows = db.prepare(
-      `SELECT category, COUNT(*) as count FROM tickets ${whereClause} GROUP BY category`
-    ).all(...params) as { category: string; count: number }[];
+  const categoryRows = userId
+    ? await pool.query(
+        'SELECT category, COUNT(*)::int AS count FROM tickets WHERE user_id = $1 GROUP BY category',
+        [userId]
+      )
+    : await pool.query('SELECT category, COUNT(*)::int AS count FROM tickets GROUP BY category');
 
-    const priorityRows = db.prepare(
-      `SELECT priority, COUNT(*) as count FROM tickets ${whereClause} GROUP BY priority`
-    ).all(...params) as { priority: string; count: number }[];
+  const priorityRows = userId
+    ? await pool.query(
+        'SELECT priority, COUNT(*)::int AS count FROM tickets WHERE user_id = $1 GROUP BY priority',
+        [userId]
+      )
+    : await pool.query('SELECT priority, COUNT(*)::int AS count FROM tickets GROUP BY priority');
 
-    const statusRows = db.prepare(
-      `SELECT status, COUNT(*) as count FROM tickets ${whereClause} GROUP BY status`
-    ).all(...params) as { status: string; count: number }[];
+  const statusRows = userId
+    ? await pool.query(
+        'SELECT status, COUNT(*)::int AS count FROM tickets WHERE user_id = $1 GROUP BY status',
+        [userId]
+      )
+    : await pool.query('SELECT status, COUNT(*)::int AS count FROM tickets GROUP BY status');
 
-    const closedCount = (db.prepare(
-      `SELECT COUNT(*) as count FROM tickets ${whereClause} ${whereClause ? 'AND' : 'WHERE'} status = 'closed'`
-    ).get(...params) as { count: number }).count;
+  const closedCountResult = userId
+    ? await pool.query(
+        "SELECT COUNT(*)::int AS count FROM tickets WHERE user_id = $1 AND status = 'closed'",
+        [userId]
+      )
+    : await pool.query("SELECT COUNT(*)::int AS count FROM tickets WHERE status = 'closed'");
+  const closedCount = closedCountResult.rows[0].count;
 
-    const recentCount = (db.prepare(
-      `SELECT COUNT(*) as count FROM tickets ${whereClause} ${userId ? 'AND' : 'WHERE'} created_at >= datetime('now', '-7 days')`
-    ).get(...params) as { count: number }).count;
+  const recentCountResult = userId
+    ? await pool.query(
+        "SELECT COUNT(*)::int AS count FROM tickets WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '7 days'",
+        [userId]
+      )
+    : await pool.query("SELECT COUNT(*)::int AS count FROM tickets WHERE created_at >= NOW() - INTERVAL '7 days'");
+  const recentCount = recentCountResult.rows[0].count;
 
-    const byCategory: Record<string, number> = {};
-    categoryRows.forEach(r => { byCategory[r.category] = r.count; });
+  const byCategory: Record<string, number> = {};
+  categoryRows.rows.forEach((row: { category: string; count: number }) => {
+    byCategory[row.category] = row.count;
+  });
 
-    const byPriority: Record<string, number> = {};
-    priorityRows.forEach(r => { byPriority[r.priority] = r.count; });
+  const byPriority: Record<string, number> = {};
+  priorityRows.rows.forEach((row: { priority: string; count: number }) => {
+    byPriority[row.priority] = row.count;
+  });
 
-    const byStatus: Record<string, number> = {};
-    statusRows.forEach(r => { byStatus[r.status] = r.count; });
+  const byStatus: Record<string, number> = {};
+  statusRows.rows.forEach((row: { status: string; count: number }) => {
+    byStatus[row.status] = row.count;
+  });
 
-    return { total, byCategory, byPriority, byStatus, closedCount, recentCount };
-  } finally {
-    db.close();
-  }
-}
-
-function rowToTicket(row: TicketRow): Ticket {
-  return {
-    ...row,
-    issues: JSON.parse(row.issues),
-    actions: JSON.parse(row.actions),
-    priority: row.priority as Ticket['priority'],
-    status: row.status as TicketStatus,
-    source: row.source,
-    userProjects: row.userProjects ? JSON.parse(row.userProjects) : [],
-  };
+  return { total, byCategory, byPriority, byStatus, closedCount, recentCount };
 }

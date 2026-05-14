@@ -11,7 +11,7 @@ export const GET = auth(async function GET(req) {
     const user = req.auth.user as any;
     // If technician, get all. If user, get only their own.
     const userId = user.role === 'technician' ? undefined : Number(user.id);
-    const tickets = getAllTickets(userId);
+    const tickets = await getAllTickets(userId);
     return NextResponse.json(tickets);
   } catch (error) {
     console.error('Tickets API error:', error);

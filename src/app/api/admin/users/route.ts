@@ -9,7 +9,7 @@ export const GET = auth(async function GET(req) {
   if (user.role !== 'technician') return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
 
   try {
-    const users = getAllUsers();
+    const users = await getAllUsers();
     return NextResponse.json(users);
   } catch (error) {
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
@@ -34,12 +34,12 @@ export const POST = auth(async function POST(req) {
       return NextResponse.json({ error: "All fields are required" }, { status: 400 });
     }
 
-    if (getUserByUsername(username)) {
+    if (await getUserByUsername(username)) {
       return NextResponse.json({ error: "User already exists" }, { status: 400 });
     }
 
     const hash = await bcrypt.hash(password, 10);
-    createUser(username, hash, role, projects || []);
+    await createUser(username, hash, role, projects || []);
 
     return NextResponse.json({ success: true }, { status: 201 });
   } catch (error) {
@@ -60,11 +60,11 @@ export const PATCH = auth(async function PATCH(req) {
       return NextResponse.json({ error: "ID and role are required" }, { status: 400 });
     }
 
-    updateUser(id, role, projects || []);
+    await updateUser(id, role, projects || []);
 
     if (password && password.trim().length >= 6) {
       const hash = await bcrypt.hash(password.trim(), 10);
-      updateUserPassword(id, hash);
+      await updateUserPassword(id, hash);
     }
 
     return NextResponse.json({ success: true });

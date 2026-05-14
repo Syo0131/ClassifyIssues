@@ -8,7 +8,7 @@ export default async function TicketPage({ params }: { params: { id: string } })
   if (!session || !session.user) redirect("/login");
 
   const { id } = await params as { id: string };
-  const ticket = getTicketById(Number(id));
+  const ticket = await getTicketById(Number(id));
 
   if (!ticket) notFound();
 
@@ -18,7 +18,7 @@ export default async function TicketPage({ params }: { params: { id: string } })
     redirect("/dashboard");
   }
 
-  const initialComments = getCommentsForTicket(Number(id));
+  const initialComments = await getCommentsForTicket(Number(id));
 
   return (
     <div className="page-container">

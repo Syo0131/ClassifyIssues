@@ -1,25 +1,32 @@
-const Database = require('better-sqlite3');
+const { Client } = require('pg');
 const bcrypt = require('bcryptjs');
-const path = require('path');
-const fs = require('fs');
 
-const DB_PATH = path.join(process.cwd(), 'data', 'insights.db');
-
-async function seed() {
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+function getClientConfig() {
+  const connectionString = (process.env.DATABASE_URL || '').trim();
+  if (connectionString) {
+    return { connectionString };
   }
 
-  const db = new Database(DB_PATH);
-  
-  // Ensure tables exist
-  db.exec(`
+  return {
+    host: process.env.PGHOST,
+    port: Number(process.env.PGPORT || 5432),
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
+    database: process.env.PGDATABASE,
+  };
+}
+
+async function seed() {
+  const client = new Client(getClientConfig());
+  await client.connect();
+
+  await client.query(`
     CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       username TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
-      role TEXT NOT NULL CHECK(role IN ('user', 'technician'))
+      role TEXT NOT NULL CHECK(role IN ('user', 'technician')),
+      projects JSONB NOT NULL DEFAULT '[]'::jsonb
     );
   `);
 
@@ -29,18 +36,24 @@ async function seed() {
   const hash = await bcrypt.hash(password, 10);
 
   try {
-    const stmt = db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)');
-    stmt.run(username, hash, role);
+    await client.query(
+      `INSERT INTO users (username, password_hash, role, projects)
+       VALUES ($1, $2, $3, $4::jsonb)`,
+      [username, hash, role, JSON.stringify([])]
+    );
     console.log('Admin user created successfully: admin / admin123');
   } catch (e) {
-    if (e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+    if (e.code === '23505') {
       console.log('Admin user already exists.');
     } else {
       console.error('Error seeding admin user:', e);
     }
   } finally {
-    db.close();
+    await client.end();
   }
 }
 
-seed();
+seed().catch((error) => {
+  console.error('Seed script failed:', error);
+  process.exit(1);
+});

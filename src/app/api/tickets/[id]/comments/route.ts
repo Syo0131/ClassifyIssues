@@ -11,14 +11,14 @@ export const GET = auth(async function GET(req, { params }) {
   const user = req.auth.user as any;
 
   try {
-    const ticket = getTicketById(Number(id));
+    const ticket = await getTicketById(Number(id));
     if (!ticket) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
 
     if (user.role !== 'technician' && ticket.user_id !== Number(user.id)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    const comments = getCommentsForTicket(Number(id));
+    const comments = await getCommentsForTicket(Number(id));
     return NextResponse.json(comments);
   } catch (error) {
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
@@ -34,7 +34,7 @@ export const POST = auth(async function POST(req, { params }) {
   const user = req.auth.user as any;
 
   try {
-    const ticket = getTicketById(Number(id));
+    const ticket = await getTicketById(Number(id));
     if (!ticket) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
 
     if (user.role !== 'technician' && ticket.user_id !== Number(user.id)) {
@@ -48,7 +48,7 @@ export const POST = auth(async function POST(req, { params }) {
       return NextResponse.json({ error: "Comment text is required" }, { status: 400 });
     }
 
-    createComment(Number(id), Number(user.id), text.trim());
+    await createComment(Number(id), Number(user.id), text.trim());
     return NextResponse.json({ success: true }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

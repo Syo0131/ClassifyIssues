@@ -21,7 +21,7 @@ export const POST = auth(async function POST(req) {
     }
 
     const sessionUser = req.auth.user as any;
-    const user = getUserByUsername(sessionUser.name);
+    const user = await getUserByUsername(sessionUser.name);
 
     if (!user || !user.password_hash) {
       return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
@@ -35,7 +35,7 @@ export const POST = auth(async function POST(req) {
 
     // Hash new password and update
     const hash = await bcrypt.hash(newPassword, 10);
-    const success = updateUserPassword(user.id, hash);
+    const success = await updateUserPassword(user.id, hash);
 
     if (!success) {
       return NextResponse.json({ error: "No se pudo actualizar la contraseña" }, { status: 500 });

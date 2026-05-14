@@ -21,7 +21,7 @@ export const POST = auth(async function POST(req) {
 
     const userId = (req.auth.user as any).id;
     const analysis = await analyzeRequest(text.trim());
-    const ticket = createTicket(Number(userId), project || 'General', text.trim(), analysis);
+    const ticket = await createTicket(Number(userId), project || 'General', text.trim(), analysis);
 
     return NextResponse.json(ticket, { status: 201 });
   } catch (error) {
