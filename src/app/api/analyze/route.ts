@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeRequest } from '@/lib/ai';
-import { createTicket } from '@/lib/db';
+import { createTicket, getUserByUsername } from '@/lib/db';
 import { auth } from '@/auth';
 
 export const POST = auth(async function POST(req) {
@@ -19,9 +19,14 @@ export const POST = auth(async function POST(req) {
       );
     }
 
-    const userId = (req.auth.user as any).id;
+    const sessionUser = req.auth.user as any;
+    const dbUser = await getUserByUsername(sessionUser.name);
+    if (!dbUser) {
+      return NextResponse.json({ error: 'User not found in database.' }, { status: 404 });
+    }
+
     const analysis = await analyzeRequest(text.trim());
-    const ticket = await createTicket(Number(userId), project || 'General', text.trim(), analysis);
+    const ticket = await createTicket(dbUser.id, project || 'General', text.trim(), analysis);
 
     return NextResponse.json(ticket, { status: 201 });
   } catch (error) {

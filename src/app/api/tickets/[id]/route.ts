@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getTicketById, updateTicketStatus } from '@/lib/db';
+import { getTicketById, getUserByUsername, updateTicketStatus } from '@/lib/db';
 import { auth } from '@/auth';
 
 export const PATCH = auth(async function PATCH(req, { params }) {
@@ -9,6 +9,10 @@ export const PATCH = auth(async function PATCH(req, { params }) {
 
   const { id } = await params as { id: string };
   const user = req.auth.user as any;
+  const dbUser = await getUserByUsername(user.name);
+  if (!dbUser) {
+    return NextResponse.json({ error: 'User not found in database.' }, { status: 404 });
+  }
 
   if (user.role !== 'technician') {
     return NextResponse.json({ error: "Only technicians can update status" }, { status: 403 });
@@ -22,7 +26,7 @@ export const PATCH = auth(async function PATCH(req, { params }) {
       return NextResponse.json({ error: "Status is required" }, { status: 400 });
     }
 
-    const updated = await updateTicketStatus(Number(id), status, Number(user.id));
+    const updated = await updateTicketStatus(Number(id), status, dbUser.id);
     if (!updated) {
       return NextResponse.json({ error: "Ticket not found or no changes" }, { status: 404 });
     }
@@ -40,6 +44,10 @@ export const GET = auth(async function GET(req, { params }) {
 
   const { id } = await params as { id: string };
   const user = req.auth.user as any;
+  const dbUser = await getUserByUsername(user.name);
+  if (!dbUser) {
+    return NextResponse.json({ error: 'User not found in database.' }, { status: 404 });
+  }
 
   try {
     const ticket = await getTicketById(Number(id));
@@ -48,7 +56,7 @@ export const GET = auth(async function GET(req, { params }) {
     }
 
     // Security: user can only see their own tickets
-    if (user.role !== 'technician' && ticket.user_id !== Number(user.id)) {
+    if (user.role !== 'technician' && ticket.user_id !== dbUser.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createComment, getCommentsForTicket, getTicketById } from '@/lib/db';
+import { createComment, getCommentsForTicket, getTicketById, getUserByUsername } from '@/lib/db';
 import { auth } from '@/auth';
 
 export const GET = auth(async function GET(req, { params }) {
@@ -9,12 +9,16 @@ export const GET = auth(async function GET(req, { params }) {
 
   const { id } = await params as { id: string };
   const user = req.auth.user as any;
+  const dbUser = await getUserByUsername(user.name);
+  if (!dbUser) {
+    return NextResponse.json({ error: 'User not found in database.' }, { status: 404 });
+  }
 
   try {
     const ticket = await getTicketById(Number(id));
     if (!ticket) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
 
-    if (user.role !== 'technician' && ticket.user_id !== Number(user.id)) {
+    if (user.role !== 'technician' && ticket.user_id !== dbUser.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
@@ -32,12 +36,16 @@ export const POST = auth(async function POST(req, { params }) {
 
   const { id } = await params as { id: string };
   const user = req.auth.user as any;
+  const dbUser = await getUserByUsername(user.name);
+  if (!dbUser) {
+    return NextResponse.json({ error: 'User not found in database.' }, { status: 404 });
+  }
 
   try {
     const ticket = await getTicketById(Number(id));
     if (!ticket) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
 
-    if (user.role !== 'technician' && ticket.user_id !== Number(user.id)) {
+    if (user.role !== 'technician' && ticket.user_id !== dbUser.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
@@ -48,7 +56,7 @@ export const POST = auth(async function POST(req, { params }) {
       return NextResponse.json({ error: "Comment text is required" }, { status: 400 });
     }
 
-    await createComment(Number(id), Number(user.id), text.trim());
+    await createComment(Number(id), dbUser.id, text.trim());
     return NextResponse.json({ success: true }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

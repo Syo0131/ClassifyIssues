@@ -1,5 +1,26 @@
 const { Client } = require('pg');
 const bcrypt = require('bcryptjs');
+const fs = require('fs');
+const path = require('path');
+
+function loadEnvFile() {
+  const envPath = path.join(__dirname, '.env');
+  if (!fs.existsSync(envPath)) return;
+
+  const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#') || !line.includes('=')) continue;
+
+    const [key, ...rest] = line.split('=');
+    const value = rest.join('=').trim();
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadEnvFile();
 
 function getClientConfig() {
   const connectionString = (process.env.DATABASE_URL || '').trim();
