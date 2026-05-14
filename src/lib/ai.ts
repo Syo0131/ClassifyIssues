@@ -19,6 +19,35 @@ Campos del JSON:
 
 Responde SOLO con JSON válido en ESPAÑOL.`;
 
+// ─── Retry Helper ─────────────────────────────────────────────────────────────
+// Retries a function with exponential backoff for transient errors (429, 503).
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxAttempts = 3,
+  baseDelayMs = 1000
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error: unknown) {
+      const status = (error as { status?: number })?.status;
+      const isRetryable = status === 503 || status === 429;
+
+      if (!isRetryable || attempt === maxAttempts) {
+        throw error;
+      }
+
+      const delay = baseDelayMs * Math.pow(2, attempt - 1);
+      console.warn(
+        `Gemini API ${status} error (attempt ${attempt}/${maxAttempts}). Retrying in ${delay}ms...`
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error('Unreachable');
+}
+
 export async function analyzeRequest(text: string): Promise<AnalysisResult> {
   const apiKey = process.env.GEMINI_API_KEY;
 
@@ -38,7 +67,7 @@ export async function analyzeRequest(text: string): Promise<AnalysisResult> {
       }
     });
 
-    const result = await model.generateContent(text);
+    const result = await withRetry(() => model.generateContent(text));
     const content = result.response.text();
     
     if (!content) throw new Error('Empty response from Gemini');
@@ -80,12 +109,51 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
   'Recursos Humanos': ['hiring', 'employee', 'onboarding', 'training', 'retention', 'salary', 'benefits', 'culture', 'team', 'recruitment', 'turnover', 'empleado'],
 };
 
-const PRIORITY_KEYWORDS: Record<string, string[]> = {
-  critical: ['caida', 'caída', 'no funciona', 'abajo', 'muerta', 'error 500', 'urgente', 'emergencia', 'parado', 'no carga'],
-  high: ['importante', 'error', 'fallo', 'bug', 'lento', 'no puedo entrar'],
-  medium: ['ayuda', 'duda', 'consulta', 'configurar', 'ajuste'],
-  low: ['gracias', 'me gustaría', 'opcional', 'color'],
-};
+const CRITICAL_TECH_KEYWORDS = [
+  'error 500', 'error 503', 'caida general', 'caída general', 'sistema caido', 'sistema caído',
+  'plataforma caida', 'plataforma caída', 'servicio caido', 'servicio caído', 'sitio caido', 'sitio caído',
+  'base de datos caida', 'base de datos caída', 'server down', 'downtime',
+];
+
+const GLOBAL_IMPACT_KEYWORDS = [
+  'todos', 'nadie', 'empresa', 'general', 'global', 'produccion', 'producción',
+  'negocio detenido', 'operacion detenida', 'operación detenida', 'sistema completo',
+];
+
+const PERSONAL_SCOPE_KEYWORDS = [
+  'mi pc', 'mi computadora', 'mi equipo', 'mi laptop', 'mi usuario', 'mi cuenta',
+];
+
+const HIGH_PRIORITY_KEYWORDS = [
+  'no funciona', 'no enciende', 'no prende', 'no puedo entrar', 'error', 'fallo', 'bug',
+  'lento', 'importante', 'bloqueado', 'bloqueada',
+];
+
+const MEDIUM_PRIORITY_KEYWORDS = ['ayuda', 'duda', 'consulta', 'configurar', 'ajuste'];
+const LOW_PRIORITY_KEYWORDS = ['gracias', 'me gustaría', 'opcional', 'color', 'test', 'prueba'];
+
+function determineMockPriority(lower: string): AnalysisResult['priority'] {
+  const hasCriticalTechSignal = CRITICAL_TECH_KEYWORDS.some(kw => lower.includes(kw));
+  const hasGlobalImpact = GLOBAL_IMPACT_KEYWORDS.some(kw => lower.includes(kw));
+  const isPersonalScope = PERSONAL_SCOPE_KEYWORDS.some(kw => lower.includes(kw));
+
+  // Critical only if there are explicit outage signals with broad business impact.
+  if (hasCriticalTechSignal && hasGlobalImpact && !isPersonalScope) {
+    return 'critical';
+  }
+
+  // Personal device/account incidents should not be marked as critical.
+  if (isPersonalScope && (lower.includes('no funciona') || lower.includes('no enciende') || lower.includes('no prende'))) {
+    return 'high';
+  }
+
+  if (HIGH_PRIORITY_KEYWORDS.some(kw => lower.includes(kw))) return 'high';
+  if (MEDIUM_PRIORITY_KEYWORDS.some(kw => lower.includes(kw))) return 'medium';
+  if (LOW_PRIORITY_KEYWORDS.some(kw => lower.includes(kw))) return 'low';
+
+  // Conservative default for vague requests.
+  return 'low';
+}
 
 function mockAnalyze(text: string): AnalysisResult {
   const lower = text.toLowerCase();
@@ -102,13 +170,7 @@ function mockAnalyze(text: string): AnalysisResult {
   }
 
   // Determine priority
-  let priority: AnalysisResult['priority'] = 'medium';
-  for (const [p, keywords] of Object.entries(PRIORITY_KEYWORDS)) {
-    if (keywords.some(kw => lower.includes(kw))) {
-      priority = p as AnalysisResult['priority'];
-      break;
-    }
-  }
+  const priority = determineMockPriority(lower);
 
   // Extract issues
   const sentences = text
