@@ -3,8 +3,7 @@ import "./globals.css";
 import Navbar from "@/components/Navbar";
 
 export const metadata: Metadata = {
-  title: "Insight Engine — AI-Powered Stakeholder Request Analyzer",
-  description: "Transform unstructured stakeholder requests into structured insights with AI-powered classification, issue extraction, and action recommendations.",
+  title: "Support Ticket System -  Daybel Diaz",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
