@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { signOut } from 'next-auth/react';
 
-export default function NavbarClient({ user }: { user: any }) {
+export default function NavbarClient({ user }: { user?: any }) {
+  const displayName = user?.name || 'Usuario';
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
       <Link href="/profile" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)', textDecoration: 'none' }}>
@@ -12,7 +14,7 @@ export default function NavbarClient({ user }: { user: any }) {
           <circle cx="12" cy="7" r="4"></circle>
         </svg>
         <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>
-          {user.name}
+          {displayName}
         </span>
       </Link>
       <button 

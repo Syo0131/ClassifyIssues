@@ -25,6 +25,7 @@ export default function TicketTable({ tickets }: TicketTableProps) {
             <tr>
               <th>Número</th>
               <th>Solicitud</th>
+              <th style={{ minWidth: '150px' }}>Solicitante</th>
               <th>Proyecto</th>
               <th>Prioridad</th>
               <th>Estado</th>
@@ -41,6 +42,15 @@ export default function TicketTable({ tickets }: TicketTableProps) {
                     {ticket.raw_text}
                   </div>
                 </td>
+                <td>
+                  <div
+                    style={{ maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    title={ticket.username || `User #${ticket.user_id}`}
+                  >
+                    {ticket.username || `User #${ticket.user_id}`}
+                  </div>
+                </td>
+                
                 <td style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
                   {ticket.project || 'General'}
                 </td>

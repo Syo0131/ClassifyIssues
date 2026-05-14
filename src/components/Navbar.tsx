@@ -30,14 +30,14 @@ export default async function Navbar() {
       
       {/* CENTER LINKS */}
       <div style={{ display: 'flex', height: '100%' }}>
-        {session ? (
+        {session?.user ? (
           <NavLinks role={role} />
         ) : null}
       </div>
 
       {/* RIGHT ACTIONS */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-        {session ? (
+        {session?.user ? (
            <NavbarClient user={session.user} />
         ) : (
           <Link href="/login" style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
