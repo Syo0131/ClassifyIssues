@@ -1,6 +1,7 @@
 import type { NextAuthConfig } from "next-auth";
 
 const SESSION_VERSION = process.env.AUTH_SESSION_VERSION ?? "1";
+const AUTH_BASE_URL = process.env.AUTH_URL || process.env.NEXTAUTH_URL;
 
 export const authConfig = {
   trustHost: true,
@@ -11,12 +12,13 @@ export const authConfig = {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user && !!(auth.user as any).id;
       const isLoginPage = nextUrl.pathname === "/login";
+      const baseUrl = AUTH_BASE_URL || nextUrl.origin;
 
       if (!isLoggedIn && !isLoginPage) {
-        return false; // Redirect to login
+        return Response.redirect(new URL("/login", baseUrl));
       }
       if (isLoggedIn && isLoginPage) {
-        return Response.redirect(new URL("/dashboard", nextUrl));
+        return Response.redirect(new URL("/dashboard", baseUrl));
       }
       return true;
     },
