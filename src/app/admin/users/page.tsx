@@ -196,6 +196,7 @@ function UserFormModal({ isOpen, onClose, user, onSave }: {
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
+  const [filterProject, setFilterProject] = useState('all');
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -220,6 +221,10 @@ export default function AdminUsersPage() {
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterProject]);
 
   const handleCreateUser = () => {
     setSelectedUser(null);
@@ -247,9 +252,23 @@ export default function AdminUsersPage() {
     return false;
   };
 
+  const availableProjects = Array.from(
+    new Set(
+      users.flatMap(user =>
+        user.projects && user.projects.length > 0 ? user.projects : ['General']
+      )
+    )
+  ).sort((a, b) => a.localeCompare(b));
+
+  const filteredUsers = users.filter(user => {
+    if (filterProject === 'all') return true;
+    const userProjects = user.projects && user.projects.length > 0 ? user.projects : ['General'];
+    return userProjects.includes(filterProject);
+  });
+
   // Pagination Logic
-  const totalPages = Math.ceil(users.length / ITEMS_PER_PAGE);
-  const paginatedUsers = users.slice(
+  const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
+  const paginatedUsers = filteredUsers.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
@@ -264,9 +283,21 @@ export default function AdminUsersPage() {
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Usuarios del Sistema</h2>
-          <button onClick={handleCreateUser} className="btn-primary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
-            + Nuevo Usuario
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <CustomSelect
+              value={filterProject}
+              onChange={setFilterProject}
+              options={[
+                { value: 'all', label: 'Todos los Proyectos' },
+                ...availableProjects.map(project => ({ value: project, label: project })),
+              ]}
+              integratedMenu
+              minimal
+            />
+            <button onClick={handleCreateUser} className="btn-primary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
+              + Nuevo Usuario
+            </button>
+          </div>
         </div>
         
         {loadingUsers ? (
@@ -311,10 +342,10 @@ export default function AdminUsersPage() {
                       </td>
                     </tr>
                   ))}
-                  {users.length === 0 && (
+                  {filteredUsers.length === 0 && (
                     <tr>
                       <td colSpan={4} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                        No hay usuarios registrados.
+                        No hay usuarios para el proyecto seleccionado.
                       </td>
                     </tr>
                   )}

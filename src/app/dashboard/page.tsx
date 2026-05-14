@@ -13,6 +13,7 @@ export default function DashboardPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPriority, setFilterPriority] = useState('all');
   const [filterStatus, setFilterStatus] = useState('active'); // active means != closed
+  const [filterProject, setFilterProject] = useState('all');
   const [sortOrder, setSortOrder] = useState('newest');
 
   // Pagination State
@@ -38,7 +39,11 @@ export default function DashboardPage() {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterPriority, filterStatus, sortOrder]);
+  }, [searchTerm, filterPriority, filterStatus, filterProject, sortOrder]);
+
+  const availableProjects = Array.from(
+    new Set(tickets.map(ticket => (ticket.project && ticket.project.trim()) || 'General'))
+  ).sort((a, b) => a.localeCompare(b));
 
   if (loading) {
     return (
@@ -59,6 +64,7 @@ export default function DashboardPage() {
     if (filterStatus === 'active' && t.status === 'closed') return false;
     if (filterStatus !== 'all' && filterStatus !== 'active' && t.status !== filterStatus) return false;
     if (filterPriority !== 'all' && t.priority !== filterPriority) return false;
+    if (filterProject !== 'all' && ((t.project && t.project.trim()) || 'General') !== filterProject) return false;
     
     if (searchTerm) {
       const lowerSearch = searchTerm.toLowerCase();
@@ -141,6 +147,17 @@ export default function DashboardPage() {
               options={[
                 { value: 'newest', label: 'Más Recientes' },
                 { value: 'oldest', label: 'Más Antiguos' }
+              ]}
+              integratedMenu
+              minimal
+            />
+
+            <CustomSelect
+              value={filterProject}
+              onChange={setFilterProject}
+              options={[
+                { value: 'all', label: 'Todos los Proyectos' },
+                ...availableProjects.map(project => ({ value: project, label: project })),
               ]}
               integratedMenu
               minimal
