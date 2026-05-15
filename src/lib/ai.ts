@@ -24,6 +24,36 @@ Campos del JSON:
 
 Responde SOLO con JSON válido en ESPAÑOL.`;
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __geminiModel: import('@google/generative-ai').GenerativeModel | undefined;
+  // eslint-disable-next-line no-var
+  var __geminiModelSpec: string | undefined;
+}
+
+function getGeminiModelCached() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === 'mock' || apiKey === '') {
+    throw new Error('Gemini not configured');
+  }
+  const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const spec = `${apiKey}:${modelName}`;
+  if (!global.__geminiModel || global.__geminiModelSpec !== spec) {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    global.__geminiModel = genAI.getGenerativeModel({
+      model: modelName,
+      systemInstruction: SYSTEM_PROMPT,
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 1000,
+        responseMimeType: 'application/json',
+      },
+    });
+    global.__geminiModelSpec = spec;
+  }
+  return global.__geminiModel;
+}
+
 // ─── Retry Helper ─────────────────────────────────────────────────────────────
 // Retries a function with exponential backoff for transient errors (429, 503).
 
@@ -61,17 +91,7 @@ export async function analyzeRequest(text: string): Promise<AnalysisResult> {
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-      systemInstruction: SYSTEM_PROMPT,
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 1000,
-        responseMimeType: "application/json",
-      }
-    });
-
+    const model = getGeminiModelCached();
     const result = await withRetry(() => model.generateContent(text));
     const content = result.response.text();
     

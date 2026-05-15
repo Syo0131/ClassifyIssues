@@ -6,6 +6,8 @@ import {
   User,
   Comment,
   TicketStatus,
+  TicketListFilters,
+  TicketListPageResult,
 } from './types';
 
 type JsonArrayValue = string[] | unknown[] | string | null | undefined;
@@ -267,6 +269,154 @@ export async function getAllTickets(userId?: number): Promise<Ticket[]> {
   return result.rows.map(rowToTicket);
 }
 
+const TICKET_LIST_MAX_LIMIT = 50;
+const TICKET_LIST_DEFAULT_LIMIT = 10;
+
+function escapeIlikePattern(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
+/** Contadores para el perfil sin cargar todos los tickets. */
+export async function getProfileTicketCounters(
+  userId: number,
+  role: 'user' | 'technician'
+): Promise<{ totalCreated: number; totalClosedByMe: number }> {
+  await ensureSchema();
+  const pool = getPool();
+
+  const totalRes = await pool.query<{ c: number }>(
+    `SELECT COUNT(*)::int AS c FROM tickets WHERE user_id = $1`,
+    [userId]
+  );
+  const totalCreated = totalRes.rows[0].c;
+
+  if (role === 'technician') {
+    const closedRes = await pool.query<{ c: number }>(
+      `SELECT COUNT(*)::int AS c FROM tickets WHERE closed_by_user_id = $1`,
+      [userId]
+    );
+    return { totalCreated, totalClosedByMe: closedRes.rows[0].c };
+  }
+
+  const closedRes = await pool.query<{ c: number }>(
+    `SELECT COUNT(*)::int AS c FROM tickets WHERE user_id = $1 AND status = 'closed'`,
+    [userId]
+  );
+  return { totalCreated, totalClosedByMe: closedRes.rows[0].c };
+}
+
+/** Proyectos distintos visibles en el ámbito (todos los tickets o solo los del usuario). */
+export async function listTicketProjectLabels(userIdScope?: number): Promise<string[]> {
+  await ensureSchema();
+  const pool = getPool();
+  const result =
+    userIdScope != null
+      ? await pool.query<{ p: string }>(
+          `SELECT DISTINCT COALESCE(NULLIF(TRIM(project), ''), 'General') AS p
+           FROM tickets WHERE user_id = $1 ORDER BY 1`,
+          [userIdScope]
+        )
+      : await pool.query<{ p: string }>(
+          `SELECT DISTINCT COALESCE(NULLIF(TRIM(project), ''), 'General') AS p
+           FROM tickets ORDER BY 1`
+        );
+  return result.rows.map(r => r.p);
+}
+
+function buildTicketListWhere(filters: TicketListFilters): { sql: string; params: unknown[] } {
+  const parts: string[] = [];
+  const params: unknown[] = [];
+  let i = 1;
+
+  if (filters.userIdScope != null) {
+    parts.push(`t.user_id = $${i++}`);
+    params.push(filters.userIdScope);
+  }
+
+  if (filters.status === 'active') {
+    parts.push(`t.status <> 'closed'`);
+  } else if (filters.status !== 'all') {
+    parts.push(`t.status = $${i++}`);
+    params.push(filters.status);
+  }
+
+  if (filters.priority !== 'all') {
+    parts.push(`t.priority = $${i++}`);
+    params.push(filters.priority);
+  }
+
+  if (filters.project !== 'all') {
+    parts.push(`COALESCE(NULLIF(TRIM(t.project), ''), 'General') = $${i++}`);
+    params.push(filters.project);
+  }
+
+  const q = filters.search.trim();
+  if (q) {
+    const like = `%${escapeIlikePattern(q)}%`;
+    parts.push(
+      `(CAST(t.id AS TEXT) ILIKE $${i} ESCAPE '\\' OR t.raw_text ILIKE $${i} ESCAPE '\\' OR COALESCE(t.summary, '') ILIKE $${i} ESCAPE '\\')`
+    );
+    params.push(like);
+    i++;
+  }
+
+  const sql = parts.length > 0 ? `WHERE ${parts.join(' AND ')}` : '';
+  return { sql, params };
+}
+
+/**
+ * Listado paginado con filtros en SQL (bandeja).
+ */
+export async function getTicketsPaged(
+  filters: TicketListFilters,
+  sort: 'newest' | 'oldest',
+  page: number,
+  limit: number
+): Promise<TicketListPageResult> {
+  await ensureSchema();
+  const pool = getPool();
+
+  const limitClamped = Math.min(
+    Math.max(Number(limit) || TICKET_LIST_DEFAULT_LIMIT, 1),
+    TICKET_LIST_MAX_LIMIT
+  );
+  const pageSafe = Math.max(Number(page) || 1, 1);
+  const offset = (pageSafe - 1) * limitClamped;
+
+  const { sql: whereSql, params: whereParams } = buildTicketListWhere(filters);
+  const orderDir = sort === 'oldest' ? 'ASC' : 'DESC';
+
+  const countQuery = `
+    SELECT COUNT(*)::int AS c
+    FROM tickets t
+    JOIN users u ON t.user_id = u.id
+    ${whereSql}
+  `;
+  const countRes = await pool.query<{ c: number }>(countQuery, whereParams);
+  const total = countRes.rows[0].c;
+
+  const projects = await listTicketProjectLabels(filters.userIdScope);
+
+  const limitPlaceholder = whereParams.length + 1;
+  const offsetPlaceholder = whereParams.length + 2;
+  const dataQuery = `
+    SELECT t.*, u.username, u.projects AS userProjects
+    FROM tickets t
+    JOIN users u ON t.user_id = u.id
+    ${whereSql}
+    ORDER BY t.created_at ${orderDir}
+    LIMIT $${limitPlaceholder} OFFSET $${offsetPlaceholder}
+  `;
+  const dataParams = [...whereParams, limitClamped, offset];
+  const dataRes = await pool.query(dataQuery, dataParams);
+
+  return {
+    tickets: dataRes.rows.map(rowToTicket),
+    total,
+    projects,
+  };
+}
+
 export async function getTicketById(id: number): Promise<Ticket | null> {
   await ensureSchema();
   const pool = getPool();
@@ -348,6 +498,19 @@ export async function createComment(ticketId: number, userId: number, text: stri
     [ticketId, userId, text]
   );
   return result.rows[0].id;
+}
+
+export async function getCommentById(commentId: number): Promise<Comment | null> {
+  await ensureSchema();
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT c.id, c.ticket_id, c.user_id, c.text, c.created_at, u.username, u.role
+     FROM comments c
+     JOIN users u ON c.user_id = u.id
+     WHERE c.id = $1`,
+    [commentId]
+  );
+  return result.rows[0] ?? null;
 }
 
 export async function getCommentsForTicket(ticketId: number): Promise<Comment[]> {

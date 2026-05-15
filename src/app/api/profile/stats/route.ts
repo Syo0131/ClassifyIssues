@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAllTickets, getUserByUsername, getTicketsClosedByTechnician } from '@/lib/db';
+import { getProfileTicketCounters, getUserByUsername } from '@/lib/db';
 import { auth } from '@/auth';
 
 export const GET = auth(async function GET(req) {
@@ -15,24 +15,10 @@ export const GET = auth(async function GET(req) {
   }
 
   try {
-    const userTickets = await getAllTickets(user.id); // Tickets created by this specific user
-    const totalCreated = userTickets.length;
-    
-    let totalClosedByMe = 0;
+    const { totalCreated, totalClosedByMe } = await getProfileTicketCounters(user.id, sessionUser.role);
 
-    // We only care about tickets closed by this specific user (technician or not)
-    // The previous `closedCreated` was for tickets created by user AND closed, which is not what's asked.
-    // So for technician, we count tickets where `closed_by_user_id` is the technician's ID
-    if (sessionUser.role === 'technician') {
-      const closedByMeTickets = await getTicketsClosedByTechnician(user.id);
-      totalClosedByMe = closedByMeTickets.length;
-    } else {
-      // For a regular user, 'tickets cerrados' means 'tickets created by me and closed'
-      totalClosedByMe = userTickets.filter(ticket => ticket.status === 'closed').length;
-    }
-    
-    return NextResponse.json({ 
-      total: totalCreated, 
+    return NextResponse.json({
+      total: totalCreated,
       projects: user.projects,
       totalClosedByMe,
     });

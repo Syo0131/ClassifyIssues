@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { analyzeRequest } from '@/lib/ai';
 import { createTicket, getUserByUsername } from '@/lib/db';
 import { auth } from '@/auth';
@@ -12,9 +12,18 @@ export const POST = auth(async function POST(req) {
     const body = await req.json();
     const { text, project } = body;
 
+    const MAX_TICKET_TEXT = 20_000;
+
     if (!text || typeof text !== 'string' || text.trim().length < 10) {
       return NextResponse.json(
-        { error: 'Please provide a request with at least 10 characters.' },
+        { error: 'Describe la solicitud con al menos 10 caracteres.' },
+        { status: 400 }
+      );
+    }
+
+    if (text.trim().length > MAX_TICKET_TEXT) {
+      return NextResponse.json(
+        { error: `El texto no puede superar ${MAX_TICKET_TEXT} caracteres.` },
         { status: 400 }
       );
     }

@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getTicketById, getUserByUsername, updateTicketStatus } from '@/lib/db';
+import type { TicketStatus } from '@/lib/types';
 import { auth } from '@/auth';
+
+const ALLOWED_STATUS: TicketStatus[] = ['open', 'waiting_on_client', 'closed'];
 
 export const PATCH = auth(async function PATCH(req, { params }) {
   if (!req.auth) {
@@ -22,11 +25,15 @@ export const PATCH = auth(async function PATCH(req, { params }) {
     const body = await req.json();
     const { status } = body;
 
-    if (!status) {
-      return NextResponse.json({ error: "Status is required" }, { status: 400 });
+    if (!status || typeof status !== 'string') {
+      return NextResponse.json({ error: 'Status is required' }, { status: 400 });
     }
 
-    const updated = await updateTicketStatus(Number(id), status, dbUser.id);
+    if (!ALLOWED_STATUS.includes(status as TicketStatus)) {
+      return NextResponse.json({ error: 'Estado no válido' }, { status: 400 });
+    }
+
+    const updated = await updateTicketStatus(Number(id), status as TicketStatus, dbUser.id);
     if (!updated) {
       return NextResponse.json({ error: "Ticket not found or no changes" }, { status: 404 });
     }

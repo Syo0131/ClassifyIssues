@@ -80,3 +80,18 @@ export interface DashboardStats {
   totalClosedByMe?: number; // Tickets closed by this technician
   recentCount: number;
 }
+
+/** Filtros del listado paginado de tickets (API / bandeja). */
+export interface TicketListFilters {
+  userIdScope?: number;
+  status: 'all' | 'active' | 'open' | 'waiting_on_client' | 'closed';
+  priority: 'all' | 'low' | 'medium' | 'high' | 'critical';
+  project: string;
+  search: string;
+}
+
+export interface TicketListPageResult {
+  tickets: Ticket[];
+  total: number;
+  projects: string[];
+}

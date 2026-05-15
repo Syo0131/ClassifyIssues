@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server';
-import { createComment, getCommentsForTicket, getTicketById, getUserByUsername } from '@/lib/db';
+import {
+  createComment,
+  getCommentById,
+  getCommentsForTicket,
+  getTicketById,
+  getUserByUsername,
+} from '@/lib/db';
 import { auth } from '@/auth';
 
 export const GET = auth(async function GET(req, { params }) {
@@ -52,12 +58,25 @@ export const POST = auth(async function POST(req, { params }) {
     const body = await req.json();
     const { text } = body;
 
-    if (!text || text.trim() === '') {
-      return NextResponse.json({ error: "Comment text is required" }, { status: 400 });
+    if (!text || typeof text !== 'string' || text.trim() === '') {
+      return NextResponse.json({ error: 'El comentario no puede estar vacío.' }, { status: 400 });
     }
 
-    await createComment(Number(id), dbUser.id, text.trim());
-    return NextResponse.json({ success: true }, { status: 201 });
+    const trimmed = text.trim();
+    const MAX_COMMENT = 8000;
+    if (trimmed.length > MAX_COMMENT) {
+      return NextResponse.json(
+        { error: `El comentario no puede superar ${MAX_COMMENT} caracteres.` },
+        { status: 400 }
+      );
+    }
+
+    const commentId = await createComment(Number(id), dbUser.id, trimmed);
+    const comment = await getCommentById(commentId);
+    if (!comment) {
+      return NextResponse.json({ error: 'No se pudo crear el comentario.' }, { status: 500 });
+    }
+    return NextResponse.json(comment, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }

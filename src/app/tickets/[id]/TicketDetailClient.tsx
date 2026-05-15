@@ -15,21 +15,28 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
   const [newComment, setNewComment] = useState('');
   const [status, setStatus] = useState<TicketStatus>(ticket.status);
   const [submitting, setSubmitting] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [commentError, setCommentError] = useState<string | null>(null);
   const router = useRouter();
 
   const handleStatusChange = async (newStatus: TicketStatus) => {
+    setStatusError(null);
     try {
       const res = await fetch(`/api/tickets/${ticket.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setStatus(newStatus);
         router.refresh();
+      } else {
+        setStatusError(typeof data.error === 'string' ? data.error : 'No se pudo actualizar el estado.');
       }
     } catch (err) {
       console.error(err);
+      setStatusError('Error de conexión al actualizar el estado.');
     }
   };
 
@@ -38,20 +45,27 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
     if (!newComment.trim()) return;
 
     setSubmitting(true);
+    setCommentError(null);
     try {
       const res = await fetch(`/api/tickets/${ticket.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: newComment }),
       });
-      if (res.ok) {
+      const data = await res.json().catch(() => null);
+      if (res.ok && data && typeof data.id === 'number') {
         setNewComment('');
-        const commentsRes = await fetch(`/api/tickets/${ticket.id}/comments`);
-        const updatedComments = await commentsRes.json();
-        setComments(updatedComments);
+        setComments(prev => [...prev, data as Comment]);
+      } else {
+        setCommentError(
+          data && typeof (data as { error?: string }).error === 'string'
+            ? (data as { error: string }).error
+            : 'No se pudo publicar el comentario.'
+        );
       }
     } catch (err) {
       console.error(err);
+      setCommentError('Error de conexión al publicar.');
     } finally {
       setSubmitting(false);
     }
@@ -79,7 +93,7 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '3rem', alignItems: 'start' }}>
+      <div className="ticket-detail-layout">
         
         {/* COLUMNA PRINCIPAL - CONVERSACIÓN */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -144,6 +158,22 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
           
           {/* Editor de Respuesta */}
           <div style={{ marginTop: '1rem', background: 'var(--bg-card)', border: '1px solid var(--border-focus)', borderRadius: '12px', padding: '1rem', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+            {commentError && (
+              <div
+                role="alert"
+                style={{
+                  marginBottom: '0.75rem',
+                  padding: '0.6rem 0.75rem',
+                  borderRadius: '8px',
+                  fontSize: '0.85rem',
+                  color: 'var(--danger)',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                }}
+              >
+                {commentError}
+              </div>
+            )}
             <form onSubmit={handleAddComment}>
               <textarea
                 value={newComment}
@@ -212,9 +242,26 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
                <h3 style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem' }}>
                 Acciones
               </h3>
+              {statusError && (
+                <div
+                  role="alert"
+                  style={{
+                    marginBottom: '0.75rem',
+                    padding: '0.6rem 0.75rem',
+                    borderRadius: '8px',
+                    fontSize: '0.85rem',
+                    color: 'var(--danger)',
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px solid rgba(239, 68, 68, 0.2)',
+                  }}
+                >
+                  {statusError}
+                </div>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <button 
-                  onClick={() => handleStatusChange('open')} 
+                <button
+                  type="button"
+                  onClick={() => handleStatusChange('open')}
                   style={{ 
                     textAlign: 'left', padding: '0.75rem 1rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
                     background: status === 'open' ? 'var(--primary)' : 'var(--bg-card)', 
@@ -223,8 +270,9 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
                   }}>
                   ⭕ Re-abrir Ticket
                 </button>
-                <button 
-                  onClick={() => handleStatusChange('waiting_on_client')} 
+                <button
+                  type="button"
+                  onClick={() => handleStatusChange('waiting_on_client')}
                   style={{ 
                     textAlign: 'left', padding: '0.75rem 1rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
                     background: status === 'waiting_on_client' ? 'var(--warning)' : 'var(--bg-card)', 
@@ -233,8 +281,9 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
                   }}>
                   ⏳ Esperando al Cliente
                 </button>
-                <button 
-                  onClick={() => handleStatusChange('closed')} 
+                <button
+                  type="button"
+                  onClick={() => handleStatusChange('closed')}
                   style={{ 
                     textAlign: 'left', padding: '0.75rem 1rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
                     background: status === 'closed' ? 'var(--success)' : 'var(--bg-card)', 
