@@ -19,7 +19,7 @@ export const authConfig = {
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       const isExpired = !!auth?.expires && new Date(auth.expires).getTime() <= Date.now();
-      const isLoggedIn = !!auth?.user && !!(auth.user as any).id && !isExpired;
+      const isLoggedIn = !!auth?.user && !!auth.user.id && !isExpired;
       const isLoginPage = nextUrl.pathname === "/login";
       const baseUrl = AUTH_BASE_URL || nextUrl.origin;
 
@@ -38,9 +38,9 @@ export const authConfig = {
       }
 
       if (user) {
-        token.role = (user as any).role;
-        token.id = (user as any).id;
-        token.projects = (user as any).projects || [];
+        token.role = user.role;
+        token.id = user.id;
+        token.projects = user.projects || [];
         token.sessionVersion = SESSION_VERSION;
       } else if (token.sessionVersion !== SESSION_VERSION) {
         return {};
@@ -49,14 +49,13 @@ export const authConfig = {
     },
     async session({ session, token }) {
       if (token.sessionVersion !== SESSION_VERSION || !token.id) {
-        (session as any).user = undefined;
-        return session;
+        return { ...session, user: undefined } as any;
       }
 
       if (session.user) {
-        (session.user as any).role = token.role;
-        (session.user as any).id = token.id;
-        (session.user as any).projects = token.projects || [];
+        session.user.role = token.role as 'user' | 'technician';
+        session.user.id = token.id as string;
+        session.user.projects = (token.projects as string[]) || [];
       }
       return session;
     },

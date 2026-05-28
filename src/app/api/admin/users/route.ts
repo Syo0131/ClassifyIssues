@@ -2,73 +2,74 @@ import { NextResponse } from 'next/server';
 import { createUser, getUserByUsername, getAllUsers, updateUser, updateUserPassword } from '@/lib/db';
 import { auth } from '@/auth';
 import bcrypt from 'bcryptjs';
+import { requireTechnician } from '@/lib/auth-helpers';
+import { CreateUserSchema, UpdateUserSchema } from '@/lib/validation';
 
 export const GET = auth(async function GET(req) {
-  if (!req.auth) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  const user = req.auth.user as any;
-  if (user.role !== 'technician') return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  const { error } = requireTechnician(req);
+  if (error) return error;
 
   try {
     const users = await getAllUsers();
     return NextResponse.json(users);
-  } catch (error) {
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  } catch (err) {
+    console.error('API Error:', err);
+    return NextResponse.json({ error: "Ocurrió un error inesperado." }, { status: 500 });
   }
 }) as any;
 
 export const POST = auth(async function POST(req) {
-  if (!req.auth) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
-
-  const user = req.auth.user as any;
-  if (user.role !== 'technician') {
-    return NextResponse.json({ error: "Only technicians can create users" }, { status: 403 });
-  }
+  const { error } = requireTechnician(req);
+  if (error) return error;
 
   try {
     const body = await req.json();
-    const { username, password, role, projects } = body;
+    const parsed = CreateUserSchema.safeParse(body);
 
-    if (!username || !password || !role) {
-      return NextResponse.json({ error: "All fields are required" }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
 
+    const { username, password, role, projects } = parsed.data;
+
     if (await getUserByUsername(username)) {
-      return NextResponse.json({ error: "User already exists" }, { status: 400 });
+      return NextResponse.json({ error: "El usuario ya existe" }, { status: 400 });
     }
 
     const hash = await bcrypt.hash(password, 10);
-    await createUser(username, hash, role, projects || []);
+    await createUser(username, hash, role, projects);
 
     return NextResponse.json({ success: true }, { status: 201 });
-  } catch (error) {
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  } catch (err) {
+    console.error('API Error:', err);
+    return NextResponse.json({ error: "Ocurrió un error inesperado." }, { status: 500 });
   }
 }) as any;
 
 export const PATCH = auth(async function PATCH(req) {
-  if (!req.auth) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  const user = req.auth.user as any;
-  if (user.role !== 'technician') return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  const { error } = requireTechnician(req);
+  if (error) return error;
 
   try {
     const body = await req.json();
-    const { id, role, projects, password } = body;
+    const parsed = UpdateUserSchema.safeParse(body);
 
-    if (!id || !role) {
-      return NextResponse.json({ error: "ID and role are required" }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
 
-    await updateUser(id, role, projects || []);
+    const { id, role, projects, password } = parsed.data;
 
-    if (password && password.trim().length >= 6) {
-      const hash = await bcrypt.hash(password.trim(), 10);
+    await updateUser(id, role, projects);
+
+    if (password) {
+      const hash = await bcrypt.hash(password, 10);
       await updateUserPassword(id, hash);
     }
 
     return NextResponse.json({ success: true });
-  } catch (error) {
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  } catch (err) {
+    console.error('API Error:', err);
+    return NextResponse.json({ error: "Ocurrió un error inesperado." }, { status: 500 });
   }
 }) as any;

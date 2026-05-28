@@ -62,7 +62,10 @@ async function seed() {
        VALUES ($1, $2, $3, $4::jsonb)`,
       [username, hash, role, JSON.stringify([])]
     );
+    console.log('\n--- DEVELOPMENT ONLY ---');
     console.log('Admin user created successfully: admin / admin123');
+    console.log('WARNING: Do not use these credentials in production.');
+    console.log('------------------------\n');
   } catch (e) {
     if (e.code === '23505') {
       console.log('Admin user already exists.');

@@ -8,5 +8,5 @@ export default async function HomePage() {
   const dbUser = username ? await getUserByUsername(username) : null;
   const projects = dbUser?.projects ?? [];
 
-  return <HomeClient projects={projects} />;
+  return <HomeClient userProjects={projects} />;
 }

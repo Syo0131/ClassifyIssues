@@ -1,9 +1,36 @@
+export const UserRole = {
+  User: 'user',
+  Technician: 'technician',
+} as const;
+
+export type UserRoleType = typeof UserRole[keyof typeof UserRole];
+
+export const TicketPriority = {
+  Low: 'low',
+  Medium: 'medium',
+  High: 'high',
+  Critical: 'critical',
+} as const;
+
+export type TicketPriorityType = typeof TicketPriority[keyof typeof TicketPriority];
+
+export const TicketStatus = {
+  Open: 'open',
+  WaitingOnClient: 'waiting_on_client',
+  Closed: 'closed',
+} as const;
+
+export type TicketStatusType = typeof TicketStatus[keyof typeof TicketStatus];
+
 export interface User {
   id: number;
   username: string;
-  role: 'user' | 'technician';
-  password_hash?: string;
-  projects?: string[];
+  role: UserRoleType;
+  projects: string[];
+}
+
+export interface UserWithPassword extends User {
+  password_hash: string;
 }
 
 export interface AnalysisResult {
@@ -12,11 +39,9 @@ export interface AnalysisResult {
   issues: string[];
   actions: string[];
   summary: string;
-  priority: 'low' | 'medium' | 'high' | 'critical';
+  priority: TicketPriorityType;
   source: 'gemini' | 'mock';
 }
-
-export type TicketStatus = 'open' | 'waiting_on_client' | 'closed';
 
 export interface Ticket {
   id: number;
@@ -30,29 +55,8 @@ export interface Ticket {
   issues: string[];
   actions: string[];
   summary: string;
-  priority: 'low' | 'medium' | 'high' | 'critical';
-  status: TicketStatus;
-  source: string;
-  closed_by_user_id?: number;
-  last_updated_by_user_id?: number;
-  last_updated_at?: string;
-  created_at: string;
-}
-
-export interface TicketRow {
-  id: number;
-  user_id: number;
-  username?: string; // Joined field
-  userProjects?: string; // Joined field (JSON string)
-  project?: string;
-  raw_text: string;
-  category: string;
-  confidence: number;
-  issues: string;
-  actions: string;
-  summary: string;
-  priority: string;
-  status: string;
+  priority: TicketPriorityType;
+  status: TicketStatusType;
   source: string;
   closed_by_user_id?: number;
   last_updated_by_user_id?: number;

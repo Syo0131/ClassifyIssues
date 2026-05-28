@@ -1,74 +1,56 @@
 import { NextResponse } from 'next/server';
-import { getTicketById, getUserByUsername, updateTicketStatus } from '@/lib/db';
-import type { TicketStatus } from '@/lib/types';
+import { updateTicketStatus } from '@/lib/db';
 import { auth } from '@/auth';
-
-const ALLOWED_STATUS: TicketStatus[] = ['open', 'waiting_on_client', 'closed'];
+import { requireTicketAccess } from '@/lib/auth-helpers';
+import { UpdateTicketStatusSchema } from '@/lib/validation';
 
 export const PATCH = auth(async function PATCH(req, { params }) {
-  if (!req.auth) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const { id } = await params as { id: string };
+  const ticketId = Number(id);
+
+  if (isNaN(ticketId)) {
+    return NextResponse.json({ error: "ID inválido" }, { status: 400 });
   }
 
-  const { id } = await params as { id: string };
-  const user = req.auth.user as any;
-  const dbUser = await getUserByUsername(user.name);
-  if (!dbUser) {
-    return NextResponse.json({ error: 'User not found in database.' }, { status: 404 });
-  }
+  const { user, dbUser, error } = await requireTicketAccess(req, ticketId);
+  if (error) return error;
 
   if (user.role !== 'technician') {
-    return NextResponse.json({ error: "Only technicians can update status" }, { status: 403 });
+    return NextResponse.json({ error: "Solo los técnicos pueden actualizar el estado" }, { status: 403 });
   }
 
   try {
     const body = await req.json();
-    const { status } = body;
+    const parsed = UpdateTicketStatusSchema.safeParse(body);
 
-    if (!status || typeof status !== 'string') {
-      return NextResponse.json({ error: 'Status is required' }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
 
-    if (!ALLOWED_STATUS.includes(status as TicketStatus)) {
-      return NextResponse.json({ error: 'Estado no válido' }, { status: 400 });
-    }
+    const { status } = parsed.data;
 
-    const updated = await updateTicketStatus(Number(id), status as TicketStatus, dbUser.id);
+    const updated = await updateTicketStatus(ticketId, status as any, dbUser.id);
     if (!updated) {
-      return NextResponse.json({ error: "Ticket not found or no changes" }, { status: 404 });
+      return NextResponse.json({ error: "Ticket no encontrado o sin cambios" }, { status: 404 });
     }
 
     return NextResponse.json({ success: true });
-  } catch (error) {
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  } catch (err) {
+    console.error('API Error:', err);
+    return NextResponse.json({ error: "Ocurrió un error inesperado" }, { status: 500 });
   }
 }) as any;
 
 export const GET = auth(async function GET(req, { params }) {
-  if (!req.auth) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
-
   const { id } = await params as { id: string };
-  const user = req.auth.user as any;
-  const dbUser = await getUserByUsername(user.name);
-  if (!dbUser) {
-    return NextResponse.json({ error: 'User not found in database.' }, { status: 404 });
+  const ticketId = Number(id);
+
+  if (isNaN(ticketId)) {
+    return NextResponse.json({ error: "ID inválido" }, { status: 400 });
   }
 
-  try {
-    const ticket = await getTicketById(Number(id));
-    if (!ticket) {
-      return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
-    }
+  const { ticket, error } = await requireTicketAccess(req, ticketId);
+  if (error) return error;
 
-    // Security: user can only see their own tickets
-    if (user.role !== 'technician' && ticket.user_id !== dbUser.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
-
-    return NextResponse.json(ticket);
-  } catch (error) {
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
-  }
+  return NextResponse.json(ticket);
 }) as any;

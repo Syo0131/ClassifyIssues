@@ -3,26 +3,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { User } from '@/lib/types';
 import CustomSelect from '@/components/CustomSelect';
-
-function PasswordVisibilityIcon({ visible }: { visible: boolean }) {
-  if (visible) {
-    return (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M3 5L21 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <path d="M10.58 10.58C10.21 10.95 10 11.46 10 12C10 13.1 10.9 14 12 14C12.54 14 13.05 13.79 13.42 13.42" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <path d="M9.88 5.09C10.56 4.89 11.27 4.78 12 4.78C16.8 4.78 20.78 9.45 21.82 10.83C22.06 11.15 22.06 11.58 21.82 11.9C21.41 12.44 20.53 13.51 19.3 14.55" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <path d="M6.69 7.24C4.55 8.74 3.06 10.67 2.18 11.84C1.94 12.16 1.94 12.59 2.18 12.91C3.22 14.29 7.2 18.96 12 18.96C14.02 18.96 15.84 18.14 17.37 17.06" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M2.18 12.91C3.22 14.29 7.2 18.96 12 18.96C16.8 18.96 20.78 14.29 21.82 12.91C22.06 12.59 22.06 12.16 21.82 11.84C20.78 10.46 16.8 5.79 12 5.79C7.2 5.79 3.22 10.46 2.18 11.84C1.94 12.16 1.94 12.59 2.18 12.91Z" stroke="currentColor" strokeWidth="2" />
-      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
-    </svg>
-  );
-}
+import Pagination from '@/components/Pagination';
+import Modal from '@/components/Modal';
+import AlertMessage from '@/components/AlertMessage';
+import PasswordInput from '@/components/PasswordInput';
+import LoadingState from '@/components/LoadingState';
+import EmptyState from '@/components/EmptyState';
 
 // Modal component
 function UserFormModal({ isOpen, onClose, user, onSave }: {
@@ -33,11 +19,10 @@ function UserFormModal({ isOpen, onClose, user, onSave }: {
 }) {
   const [username, setUsername] = useState(user?.username || '');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState<'user' | 'technician'>(user?.role || 'user');
   const [projectsInput, setProjectsInput] = useState(user?.projects?.join(', ') || '');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState({ type: '', text: '' });
+  const [message, setMessage] = useState({ type: '' as 'success'|'error'|'warning'|'', text: '' });
 
   useEffect(() => {
     if (user) {
@@ -51,7 +36,6 @@ function UserFormModal({ isOpen, onClose, user, onSave }: {
       setRole('user');
       setProjectsInput('');
     }
-    setShowPassword(false);
     setMessage({ type: '', text: '' });
   }, [user]);
 
@@ -90,23 +74,8 @@ function UserFormModal({ isOpen, onClose, user, onSave }: {
   if (!isOpen) return null;
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div className="card" style={{ maxWidth: '500px', width: '100%', padding: '2rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{user ? 'Editar Usuario' : 'Crear Nuevo Usuario'}</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.5rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>&times;</button>
-        </div>
-        
-        {message.text && (
-          <div style={{ 
-            marginBottom: '1.5rem', padding: '1rem', borderRadius: '8px', fontSize: '0.9rem', border: '1px solid',
-            background: message.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-            color: message.type === 'success' ? 'var(--success)' : 'var(--danger)',
-            borderColor: message.type === 'success' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'
-          }}>
-            {message.text}
-          </div>
-        )}
+    <Modal isOpen={isOpen} onClose={onClose} title={user ? 'Editar Usuario' : 'Crear Nuevo Usuario'}>
+      <AlertMessage type={message.type} message={message.text} />
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div className="form-group" style={{ margin: 0 }}>
@@ -123,38 +92,14 @@ function UserFormModal({ isOpen, onClose, user, onSave }: {
             />
           </div>
 
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label">{user ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}</label>
-            <div style={{ position: 'relative' }}>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                className="form-input"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required={!user}
-                placeholder={user ? "Dejar en blanco para no cambiar" : "********"}
-                style={{ paddingRight: '2.75rem' }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(prev => !prev)}
-                aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                title={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                style={{
-                  position: 'absolute',
-                  right: '0.75rem',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: 'var(--text-secondary)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <PasswordVisibilityIcon visible={showPassword} />
-              </button>
-            </div>
-          </div>
+          <PasswordInput
+            id="password"
+            label={user ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required={!user}
+            placeholder={user ? "Dejar en blanco para no cambiar" : "********"}
+          />
 
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Rol del Usuario</label>
@@ -187,8 +132,7 @@ function UserFormModal({ isOpen, onClose, user, onSave }: {
             {loading ? <div className="spinner" style={{ width: '16px', height: '16px' }} /> : (user ? 'Guardar Cambios' : 'Registrar Usuario')}
           </button>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -301,9 +245,7 @@ export default function AdminUsersPage() {
         </div>
         
         {loadingUsers ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}>
-            <div className="spinner" style={{ color: 'var(--primary)' }} />
-          </div>
+          <LoadingState />
         ) : (
           <>
             <div className="table-wrapper">
@@ -344,8 +286,8 @@ export default function AdminUsersPage() {
                   ))}
                   {filteredUsers.length === 0 && (
                     <tr>
-                      <td colSpan={4} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                        No hay usuarios para el proyecto seleccionado.
+                      <td colSpan={4} style={{ padding: 0 }}>
+                        <EmptyState message="No hay usuarios para el proyecto seleccionado." />
                       </td>
                     </tr>
                   )}
@@ -353,29 +295,12 @@ export default function AdminUsersPage() {
               </table>
             </div>
 
-            {/* Pagination Controls */}
             {totalPages > 1 && (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', padding: '1rem 1.5rem', borderTop: '1px solid var(--border-subtle)' }}>
-                <button 
-                  className="btn-secondary" 
-                  style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                  disabled={currentPage === 1}
-                >
-                  Anterior
-                </button>
-                <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                  Página {currentPage} de {totalPages}
-                </span>
-                <button 
-                  className="btn-secondary" 
-                  style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                  disabled={currentPage === totalPages}
-                >
-                  Siguiente
-                </button>
-              </div>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+              />
             )}
           </>
         )}

@@ -3,7 +3,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import TicketTable from '@/components/TicketTable';
 import CustomSelect from '@/components/CustomSelect';
+import Pagination from '@/components/Pagination';
+import AlertMessage from '@/components/AlertMessage';
+import SkeletonLoader from '@/components/SkeletonLoader';
 import { Ticket } from '@/lib/types';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const DEFAULT_TICKETS_POLL_MS = 30_000;
 const ITEMS_PER_PAGE = 10;
@@ -36,9 +40,11 @@ export default function DashboardPage() {
   const [sortOrder, setSortOrder] = useState('newest');
   const [currentPage, setCurrentPage] = useState(1);
 
+  const { t } = useLanguage();
+
   useEffect(() => {
-    const t = window.setTimeout(() => setDebouncedSearch(searchTerm.trim()), SEARCH_DEBOUNCE_MS);
-    return () => window.clearTimeout(t);
+    const tTimer = window.setTimeout(() => setDebouncedSearch(searchTerm.trim()), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(tTimer);
   }, [searchTerm]);
 
   useEffect(() => {
@@ -66,7 +72,7 @@ export default function DashboardPage() {
         if (!mountedRef.current) return;
 
         if (!res.ok) {
-          setFetchError(typeof data?.error === 'string' ? data.error : 'No se pudieron cargar los tickets.');
+          setFetchError(typeof data?.error === 'string' ? data.error : t('form.error_generic'));
           setTickets([]);
           setTotal(0);
           setProjectOptions([]);
@@ -74,7 +80,7 @@ export default function DashboardPage() {
         }
 
         if (!data || !Array.isArray(data.tickets) || typeof data.total !== 'number') {
-          setFetchError('Respuesta inválida del servidor.');
+          setFetchError(t('form.error_generic'));
           setTickets([]);
           setTotal(0);
           setProjectOptions([]);
@@ -86,11 +92,11 @@ export default function DashboardPage() {
         setTotal(data.total);
         setProjectOptions(Array.isArray(data.projects) ? data.projects : []);
         initialLoadDone.current = true;
-      } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || err?.message?.includes('aborted') || err === 'Component unmounted') return;
         console.error('Failed to fetch tickets:', err);
         if (mountedRef.current) {
-          setFetchError('Error de conexión al cargar los tickets.');
+          setFetchError(t('form.error_generic'));
           setTickets([]);
           setTotal(0);
         }
@@ -101,7 +107,7 @@ export default function DashboardPage() {
         }
       }
     },
-    [currentPage, debouncedSearch, filterPriority, filterStatus, filterProject, sortOrder]
+    [currentPage, debouncedSearch, filterPriority, filterStatus, filterProject, sortOrder, t]
   );
 
   useEffect(() => {
@@ -124,7 +130,7 @@ export default function DashboardPage() {
 
     return () => {
       mountedRef.current = false;
-      controller.abort();
+      controller.abort('Component unmounted');
       window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisibility);
     };
@@ -140,12 +146,12 @@ export default function DashboardPage() {
     setFilterPriority(v);
     setCurrentPage(1);
   };
-  const setSortFilter = (v: string) => {
-    setSortOrder(v);
-    setCurrentPage(1);
-  };
   const setProjectFilter = (v: string) => {
     setFilterProject(v);
+    setCurrentPage(1);
+  };
+  const setSortFilter = (v: string) => {
+    setSortOrder(v);
     setCurrentPage(1);
   };
 
@@ -153,67 +159,45 @@ export default function DashboardPage() {
     return (
       <div className="page-container" style={{ maxWidth: '1200px' }}>
         <div className="page-header">
-          <h1 className="page-title">Bandeja de Tickets</h1>
-          <p className="page-subtitle">Cargando tu historial...</p>
+          <h1 className="page-title">{t('dash.title')}</h1>
+          <p className="page-subtitle">{t('dash.subtitle_loading')}</p>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}>
-          <div className="spinner" style={{ width: '40px', height: '40px', color: 'var(--primary)', borderWidth: '4px' }} />
-        </div>
+        <SkeletonLoader />
       </div>
     );
   }
 
   return (
     <div className="page-container" style={{ maxWidth: '1200px' }}>
-      <div className="page-header" style={{ marginBottom: '1.5rem', position: 'relative' }}>
-        <h1 className="page-title">Bandeja de Tickets</h1>
-        <p className="page-subtitle">Gestiona y da seguimiento a todas las solicitudes activas.</p>
-        {refreshing && (
-          <span
-            style={{
-              position: 'absolute',
-              right: 0,
-              top: 0,
-              fontSize: '0.75rem',
-              color: 'var(--text-muted)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-            }}
-          >
-            <span className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }} />
-            Actualizando…
-          </span>
-        )}
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1 className="page-title">
+            {t('dash.title')}
+            {refreshing && <span className="spinner" style={{ marginLeft: '1rem', width: '20px', height: '20px' }} />}
+          </h1>
+          <p className="page-subtitle">{t('dash.subtitle')}</p>
+        </div>
       </div>
 
       {fetchError && (
-        <div
-          role="alert"
-          style={{
-            marginBottom: '1rem',
-            padding: '0.85rem 1rem',
-            borderRadius: '8px',
-            fontSize: '0.9rem',
-            border: '1px solid rgba(239, 68, 68, 0.25)',
-            background: 'rgba(239, 68, 68, 0.08)',
-            color: 'var(--danger)',
-          }}
-        >
-          {fetchError}
+        <div style={{ marginBottom: '1.5rem' }}>
+          <AlertMessage type="error" message={fetchError} />
         </div>
       )}
 
-      <div className="card" style={{ padding: '1rem 1.5rem', marginBottom: '1.5rem' }}>
-        <div className="dashboard-toolbar">
-          <div style={{ position: 'relative', flex: '1', minWidth: '200px' }}>
-            <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>
-              🔍
+      <div className="dashboard-controls">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <div style={{ flex: '1 1 300px', position: 'relative' }}>
+            <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
             </span>
             <input
               type="text"
               className="form-input"
-              placeholder="Buscar por número o palabra clave..."
+              placeholder={t('dash.search_placeholder')}
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               style={{ width: '100%', paddingLeft: '2.5rem', borderRadius: '100px', fontSize: '0.85rem' }}
@@ -225,11 +209,11 @@ export default function DashboardPage() {
               value={filterStatus}
               onChange={setStatusFilter}
               options={[
-                { value: 'all', label: 'Todos los Estados' },
-                { value: 'active', label: 'Solo Activos' },
-                { value: 'open', label: 'Abierto' },
-                { value: 'waiting_on_client', label: 'Esperando Cliente' },
-                { value: 'closed', label: 'Finalizado' },
+                { value: 'all', label: t('filter.status.all') },
+                { value: 'active', label: t('filter.status.active') },
+                { value: 'open', label: t('filter.status.open') },
+                { value: 'waiting_on_client', label: t('filter.status.waiting') },
+                { value: 'closed', label: t('filter.status.closed') },
               ]}
               integratedMenu
               minimal
@@ -239,11 +223,11 @@ export default function DashboardPage() {
               value={filterPriority}
               onChange={setPriorityFilter}
               options={[
-                { value: 'all', label: 'Cualquier Prioridad' },
-                { value: 'critical', label: 'Crítica' },
-                { value: 'high', label: 'Alta' },
-                { value: 'medium', label: 'Media' },
-                { value: 'low', label: 'Baja' },
+                { value: 'all', label: t('filter.priority.all') },
+                { value: 'critical', label: t('filter.priority.critical') },
+                { value: 'high', label: t('filter.priority.high') },
+                { value: 'medium', label: t('filter.priority.medium') },
+                { value: 'low', label: t('filter.priority.low') },
               ]}
               integratedMenu
               minimal
@@ -253,8 +237,8 @@ export default function DashboardPage() {
               value={sortOrder}
               onChange={setSortFilter}
               options={[
-                { value: 'newest', label: 'Más Recientes' },
-                { value: 'oldest', label: 'Más Antiguos' },
+                { value: 'newest', label: t('filter.sort.newest') },
+                { value: 'oldest', label: t('filter.sort.oldest') },
               ]}
               integratedMenu
               minimal
@@ -264,7 +248,7 @@ export default function DashboardPage() {
               value={filterProject}
               onChange={setProjectFilter}
               options={[
-                { value: 'all', label: 'Todos los Proyectos' },
+                { value: 'all', label: t('filter.project.all') },
                 ...projectOptions.map(project => ({ value: project, label: project })),
               ]}
               integratedMenu
@@ -276,31 +260,11 @@ export default function DashboardPage() {
 
       <TicketTable tickets={tickets} />
 
-      {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '1.5rem' }}>
-          <button
-            type="button"
-            className="btn-secondary"
-            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-            disabled={currentPage === 1}
-          >
-            Anterior
-          </button>
-          <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-            Página {currentPage} de {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn-secondary"
-            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-            disabled={currentPage === totalPages}
-          >
-            Siguiente
-          </button>
-        </div>
-      )}
+      <Pagination 
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={setCurrentPage}
+      />
     </div>
   );
 }

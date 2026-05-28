@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Ticket, Comment, TicketStatus } from '@/lib/types';
+import { Ticket, Comment, TicketStatusType } from '@/lib/types';
 import { useRouter } from 'next/navigation';
+import AlertMessage from '@/components/AlertMessage';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 interface TicketDetailClientProps {
   ticket: Ticket;
@@ -13,13 +15,14 @@ interface TicketDetailClientProps {
 export default function TicketDetailClient({ ticket, initialComments, currentUser }: TicketDetailClientProps) {
   const [comments, setComments] = useState<Comment[]>(initialComments);
   const [newComment, setNewComment] = useState('');
-  const [status, setStatus] = useState<TicketStatus>(ticket.status);
+  const [status, setStatus] = useState<TicketStatusType>(ticket.status);
   const [submitting, setSubmitting] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [commentError, setCommentError] = useState<string | null>(null);
   const router = useRouter();
+  const { t, language } = useLanguage();
 
-  const handleStatusChange = async (newStatus: TicketStatus) => {
+  const handleStatusChange = async (newStatus: TicketStatusType) => {
     setStatusError(null);
     try {
       const res = await fetch(`/api/tickets/${ticket.id}`, {
@@ -32,11 +35,11 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
         setStatus(newStatus);
         router.refresh();
       } else {
-        setStatusError(typeof data.error === 'string' ? data.error : 'No se pudo actualizar el estado.');
+        setStatusError(typeof data.error === 'string' ? data.error : t('form.error_generic'));
       }
     } catch (err) {
       console.error(err);
-      setStatusError('Error de conexión al actualizar el estado.');
+      setStatusError(t('form.error_generic'));
     }
   };
 
@@ -60,12 +63,12 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
         setCommentError(
           data && typeof (data as { error?: string }).error === 'string'
             ? (data as { error: string }).error
-            : 'No se pudo publicar el comentario.'
+            : t('form.error_generic')
         );
       }
     } catch (err) {
       console.error(err);
-      setCommentError('Error de conexión al publicar.');
+      setCommentError(t('form.error_generic'));
     } finally {
       setSubmitting(false);
     }
@@ -84,11 +87,11 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
               TICKET {ticket.id}
             </span>
             <span className={`badge status-${status}`} style={{ fontSize: '0.7rem', padding: '0.25rem 0.6rem' }}>
-              {status === 'open' ? 'Abierto' : status === 'waiting_on_client' ? 'Esperando Cliente' : 'Finalizado'}
+              {t(`filter.status.${status}` as any)}
             </span>
           </div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, lineHeight: 1.3, maxWidth: '800px' }}>
-            {isTechnician ? ticket.summary : 'Detalles de la Solicitud'}
+            {isTechnician ? ticket.summary : t('ticket.details_title')}
           </h1>
         </div>
       </div>
@@ -101,12 +104,12 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
           {/* Mensaje Original Estilizado */}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-              <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.9rem' }}>
+              <div className="avatar avatar-sm">
                 {ticket.username ? ticket.username.substring(0, 2).toUpperCase() : 'U'}
               </div>
               <div>
-                <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>{ticket.username} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Cliente)</span></div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{new Date(ticket.created_at).toLocaleString()}</div>
+                <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>{ticket.username} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({t('ticket.client')})</span></div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{new Date(ticket.created_at).toLocaleString(language === 'es' ? 'es-ES' : 'en-US')}</div>
               </div>
             </div>
             <div style={{ fontSize: '1.05rem', lineHeight: 1.6, color: 'var(--text-primary)', padding: '0 0 0 3.25rem' }}>
@@ -123,31 +126,16 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
               const isTech = comment.role === 'technician';
               return (
                 <div key={comment.id} style={{ display: 'flex', gap: '1rem', flexDirection: isOwn ? 'row-reverse' : 'row' }}>
-                  <div style={{ 
-                    width: '36px', height: '36px', borderRadius: '50%', flexShrink: 0,
-                    background: isTech ? 'var(--text-primary)' : 'var(--bg-muted)', 
-                    color: isTech ? 'var(--bg-app)' : 'var(--text-primary)', 
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.9rem',
-                    border: '1px solid var(--border-subtle)'
-                  }}>
+                  <div className="avatar avatar-sm" style={isTech ? { background: 'var(--text-primary)', color: 'var(--bg-app)' } : { background: 'var(--bg-muted)', color: 'var(--text-primary)' }}>
                     {comment.username ? comment.username.substring(0, 2).toUpperCase() : '?'}
                   </div>
                   
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: isOwn ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
                     <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.35rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                       <span style={{ fontWeight: 600 }}>{comment.username}</span>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{new Date(comment.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{new Date(comment.created_at).toLocaleTimeString(language === 'es' ? 'es-ES' : 'en-US', { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
-                    <div style={{ 
-                      background: isOwn ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-card)', 
-                      color: 'var(--text-primary)',
-                      border: isOwn ? '1px solid rgba(59, 130, 246, 0.2)' : '1px solid var(--border-subtle)',
-                      padding: '1rem 1.25rem', 
-                      borderRadius: '12px', 
-                      borderTopRightRadius: isOwn ? '4px' : '12px',
-                      borderTopLeftRadius: !isOwn ? '4px' : '12px',
-                      fontSize: '0.95rem', lineHeight: 1.5
-                    }}>
+                    <div className={`comment-bubble ${isOwn ? 'comment-bubble--mine' : 'comment-bubble--other'}`}>
                       {comment.text}
                     </div>
                   </div>
@@ -158,27 +146,12 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
           
           {/* Editor de Respuesta */}
           <div style={{ marginTop: '1rem', background: 'var(--bg-card)', border: '1px solid var(--border-focus)', borderRadius: '12px', padding: '1rem', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-            {commentError && (
-              <div
-                role="alert"
-                style={{
-                  marginBottom: '0.75rem',
-                  padding: '0.6rem 0.75rem',
-                  borderRadius: '8px',
-                  fontSize: '0.85rem',
-                  color: 'var(--danger)',
-                  background: 'rgba(239, 68, 68, 0.08)',
-                  border: '1px solid rgba(239, 68, 68, 0.2)',
-                }}
-              >
-                {commentError}
-              </div>
-            )}
+            {commentError && <AlertMessage type="error" message={commentError} />}
             <form onSubmit={handleAddComment}>
               <textarea
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Añadir una respuesta..."
+                placeholder={t('ticket.add_reply')}
                 required
                 style={{ 
                   width: '100%', minHeight: '80px', background: 'transparent', border: 'none', 
@@ -188,7 +161,7 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
               />
               <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.75rem', marginTop: '0.5rem' }}>
                 <button type="submit" className="btn-primary" disabled={submitting} style={{ padding: '0.5rem 1.5rem', fontSize: '0.85rem' }}>
-                  {submitting ? <div className="spinner" style={{ width: '16px', height: '16px' }} /> : 'Comentar'}
+                  {submitting ? <div className="spinner" style={{ width: '16px', height: '16px' }} /> : t('ticket.comment_btn')}
                 </button>
               </div>
             </form>
@@ -201,19 +174,17 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
           {/* Análisis de IA (Solo Técnicos) */}
           {isTechnician && (
             <div>
-              <h3 style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem' }}>
-                Propiedades (IA)
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1rem', background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
+              <h3 className="sidebar-title">{t('ticket.tech_tools')}</h3>
+              <div className="sidebar-card">
                 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Categoría</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>{t('ticket.category')}</span>
                   <span className="badge badge-category" style={{ padding: '0.15rem 0.5rem' }}>{ticket.category}</span>
                 </div>
                 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Prioridad</span>
-                  <span className={`badge badge-priority ${ticket.priority}`} style={{ padding: '0.15rem 0.5rem' }}>{ticket.priority}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>{t('table.priority')}</span>
+                  <span className={`badge badge-priority ${ticket.priority}`} style={{ padding: '0.15rem 0.5rem' }}>{t(`filter.priority.${ticket.priority}` as any)}</span>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
@@ -227,7 +198,7 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
 
               {ticket.issues.length > 0 && (
                 <div style={{ marginTop: '1.5rem' }}>
-                  <h4 style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', fontWeight: 600 }}>Puntos Extraídos</h4>
+                  <h4 style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', fontWeight: 600 }}>{t('ticket.issues')}</h4>
                   <ul style={{ paddingLeft: '1rem', fontSize: '0.85rem', color: 'var(--text-primary)', display: 'flex', flexDirection: 'column', gap: '0.5rem', margin: 0 }}>
                     {ticket.issues.map((issue, i) => <li key={i}>{issue}</li>)}
                   </ul>
@@ -239,25 +210,8 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
           {/* Acciones (Solo Técnicos) */}
           {isTechnician && (
             <div>
-               <h3 style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem' }}>
-                Acciones
-              </h3>
-              {statusError && (
-                <div
-                  role="alert"
-                  style={{
-                    marginBottom: '0.75rem',
-                    padding: '0.6rem 0.75rem',
-                    borderRadius: '8px',
-                    fontSize: '0.85rem',
-                    color: 'var(--danger)',
-                    background: 'rgba(239, 68, 68, 0.08)',
-                    border: '1px solid rgba(239, 68, 68, 0.2)',
-                  }}
-                >
-                  {statusError}
-                </div>
-              )}
+              <h3 className="sidebar-title">{t('ticket.update_status')}</h3>
+              {statusError && <AlertMessage type="error" message={statusError} />}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <button
                   type="button"
@@ -268,7 +222,7 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
                     color: status === 'open' ? 'white' : 'var(--text-primary)',
                     border: status === 'open' ? '1px solid var(--primary)' : '1px solid var(--border-subtle)'
                   }}>
-                  ⭕ Re-abrir Ticket
+                  ⭕ {t('filter.status.open')}
                 </button>
                 <button
                   type="button"
@@ -279,7 +233,7 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
                     color: status === 'waiting_on_client' ? 'white' : 'var(--text-primary)',
                     border: status === 'waiting_on_client' ? '1px solid var(--warning)' : '1px solid var(--border-subtle)'
                   }}>
-                  ⏳ Esperando al Cliente
+                  ⏳ {t('filter.status.waiting')}
                 </button>
                 <button
                   type="button"
@@ -290,7 +244,7 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
                     color: status === 'closed' ? 'white' : 'var(--text-primary)',
                     border: status === 'closed' ? '1px solid var(--success)' : '1px solid var(--border-subtle)'
                   }}>
-                  ✅ Finalizar Ticket
+                  ✅ {t('filter.status.closed')}
                 </button>
               </div>
             </div>
@@ -298,21 +252,19 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
           
           {/* Detalles Generales */}
           <div>
-            <h3 style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem' }}>
-              Detalles
-            </h3>
-            <div style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1rem', background: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: '12px' }}>
+            <h3 className="sidebar-title">{t('ticket.details')}</h3>
+            <div className="sidebar-card" style={{ fontSize: '0.85rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Solicitante</span>
+                <span style={{ color: 'var(--text-secondary)' }}>{t('table.requester')}</span>
                 <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{ticket.username || 'Desconocido'}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Proyecto</span>
+                <span style={{ color: 'var(--text-secondary)' }}>{t('table.project')}</span>
                 <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{ticket.project || 'General'}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Fecha</span>
-                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{new Date(ticket.created_at).toLocaleDateString()}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>{t('table.date')}</span>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{new Date(ticket.created_at).toLocaleDateString(language === 'es' ? 'es-ES' : 'en-US')}</span>
               </div>
             </div>
           </div>

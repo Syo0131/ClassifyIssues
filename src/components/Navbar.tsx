@@ -1,46 +1,37 @@
 import { auth } from "@/auth";
 import Link from "next/link";
 import NavbarClient from "./NavbarClient";
-import NavLinks from "./NavLinks"; // We will create this for active state tracking
+import NavLinks from "./NavLinks";
+import LanguageSwitcher from "./LanguageSwitcher";
 
 export default async function Navbar() {
   const session = await auth();
-  const role = session?.user ? (session.user as any).role : null;
+  const role = session?.user?.role || null;
 
   return (
-    <nav style={{ 
-      display: 'grid', 
-      gridTemplateColumns: '1fr auto 1fr', 
-      alignItems: 'center', 
-      padding: '0 2.5rem', 
-      height: '80px',
-      background: 'transparent',
-      borderBottom: '1px solid var(--border-subtle)',
-      position: 'sticky',
-      top: 0,
-      zIndex: 100,
-      backgroundColor: 'var(--bg-app)'
-    }}>
+    <nav className="navbar" aria-label="Navegación principal">
       {/* BRAND */}
       <div>
-        <Link href="/" style={{ fontSize: '1.25rem', fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+        <Link href="/" className="navbar-brand">
+          <div className="navbar-logo">S</div>
           Support Core
         </Link>
       </div>
       
       {/* CENTER LINKS */}
-      <div style={{ display: 'flex', height: '100%' }}>
+      <div className="navbar-nav">
         {session?.user ? (
           <NavLinks role={role} />
         ) : null}
       </div>
 
       {/* RIGHT ACTIONS */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '1rem' }}>
+        <LanguageSwitcher />
         {session?.user ? (
            <NavbarClient user={session.user} />
         ) : (
-          <Link href="/login" style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
+          <Link href="/login" className="nav-link" style={{ fontSize: '0.9rem', fontWeight: 500 }}>
             Login
           </Link>
         )}

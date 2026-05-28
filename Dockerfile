@@ -34,8 +34,6 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Create the data directory for SQLite database and set permissions
-RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
 
 COPY --from=builder /app/public ./public
 

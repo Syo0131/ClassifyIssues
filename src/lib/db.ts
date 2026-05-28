@@ -5,9 +5,10 @@ import {
   DashboardStats,
   User,
   Comment,
-  TicketStatus,
+  TicketStatusType,
   TicketListFilters,
   TicketListPageResult,
+  UserWithPassword,
 } from './types';
 
 type JsonArrayValue = string[] | unknown[] | string | null | undefined;
@@ -111,7 +112,10 @@ async function ensureSchema(): Promise<void> {
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
       `);
-    })();
+    })().catch(err => {
+      global.__pgSchemaReady = undefined;
+      throw err;
+    });
   }
   await global.__pgSchemaReady;
 }
@@ -122,13 +126,13 @@ function rowToTicket(row: any): Ticket {
     issues: parseJsonArray(row.issues),
     actions: parseJsonArray(row.actions),
     priority: row.priority as Ticket['priority'],
-    status: row.status as TicketStatus,
+    status: row.status as TicketStatusType,
     userProjects: parseJsonArray(row.userprojects),
   };
 }
 
 // User Management
-export async function getUserByUsername(username: string): Promise<User | null> {
+export async function getUserByUsername(username: string): Promise<UserWithPassword | null> {
   await ensureSchema();
   const pool = getPool();
   const result = await pool.query(
@@ -431,7 +435,7 @@ export async function getTicketById(id: number): Promise<Ticket | null> {
   return rowToTicket(result.rows[0]);
 }
 
-export async function updateTicketStatus(id: number, status: TicketStatus, actingUserId: number): Promise<boolean> {
+export async function updateTicketStatus(id: number, status: TicketStatusType, actingUserId: number): Promise<boolean> {
   await ensureSchema();
   const pool = getPool();
 

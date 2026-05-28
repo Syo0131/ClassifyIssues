@@ -24,7 +24,6 @@
 .DS_Store
 *.pem
 
-insights.db
 
 # debug
 npm-debug.log*

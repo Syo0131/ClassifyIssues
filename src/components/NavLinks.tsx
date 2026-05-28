@@ -2,39 +2,41 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 export default function NavLinks({ role }: { role: string | null }) {
   const pathname = usePathname();
+  const { t } = useLanguage();
 
-  const getLinkStyle = (path: string) => {
-    const isActive = pathname === path;
-    return {
-      display: 'flex',
-      alignItems: 'center',
-      padding: '0 1rem',
-      height: '100%',
-      fontSize: '0.9rem',
-      fontWeight: 500,
-      color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
-      borderBottom: isActive ? '2px solid var(--primary)' : '2px solid transparent',
-      transition: 'color 0.2s',
-      textDecoration: 'none'
-    };
+  const getClassName = (path: string) => {
+    return `nav-link ${pathname === path ? 'active' : ''}`;
   };
 
   return (
-    <div style={{ display: 'flex', gap: '1rem', height: '100%' }}>
-      <Link href="/" style={getLinkStyle('/')}>
-        Nuevo Ticket
+    <>
+      <Link 
+        href="/" 
+        className={getClassName('/')}
+        aria-current={pathname === '/' ? 'page' : undefined}
+      >
+        {t('nav.new_ticket')}
       </Link>
-      <Link href="/dashboard" style={getLinkStyle('/dashboard')}>
-        Tickets
+      <Link 
+        href="/dashboard" 
+        className={getClassName('/dashboard')}
+        aria-current={pathname === '/dashboard' ? 'page' : undefined}
+      >
+        {t('nav.tickets')}
       </Link>
       {role === 'technician' && (
-        <Link href="/admin/users" style={getLinkStyle('/admin/users')}>
-          Usuarios
+        <Link 
+          href="/admin/users" 
+          className={getClassName('/admin/users')}
+          aria-current={pathname === '/admin/users' ? 'page' : undefined}
+        >
+          {t('nav.users')}
         </Link>
       )}
-    </div>
+    </>
   );
 }
