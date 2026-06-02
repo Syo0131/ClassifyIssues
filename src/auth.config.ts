@@ -2,7 +2,7 @@ import type { NextAuthConfig } from "next-auth";
 
 const SESSION_VERSION = process.env.AUTH_SESSION_VERSION ?? "1";
 const AUTH_BASE_URL = process.env.AUTH_URL || process.env.NEXTAUTH_URL;
-const AUTH_SESSION_MAX_AGE = Number(process.env.AUTH_SESSION_MAX_AGE ?? 60 * 60 * 8);
+const AUTH_SESSION_MAX_AGE = Number(process.env.AUTH_SESSION_MAX_AGE ?? 60 * 60); // 1 hour
 
 export const authConfig = {
   trustHost: true,

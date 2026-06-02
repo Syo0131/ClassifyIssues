@@ -16,22 +16,19 @@ interface CustomSelectProps {
 }
 
 export default function CustomSelect({ value, onChange, options, integratedMenu = false, minimal = false }: CustomSelectProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [_isOpen, set_isOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const hasMultipleOptions = options.length > 1;
+
+  // Derivar isOpen de _isOpen y hasMultipleOptions
+  const isOpen = hasMultipleOptions ? _isOpen : false;
 
   const selectedOption = options.find(o => o.value === value);
 
   useEffect(() => {
-    if (!hasMultipleOptions && isOpen) {
-      setIsOpen(false);
-    }
-  }, [hasMultipleOptions, isOpen]);
-
-  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
+        set_isOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -43,9 +40,9 @@ export default function CustomSelect({ value, onChange, options, integratedMenu 
       <button
         type="button"
         className="filter-select"
-        onClick={() => hasMultipleOptions && setIsOpen(!isOpen)}
+        onClick={() => hasMultipleOptions && set_isOpen(!_isOpen)}
         disabled={!hasMultipleOptions}
-        aria-expanded={hasMultipleOptions ? isOpen : false}
+        aria-expanded={isOpen}
         style={{ 
           width: '100%', 
           textAlign: 'left', 
@@ -94,8 +91,8 @@ export default function CustomSelect({ value, onChange, options, integratedMenu 
           </svg>
         </span>
       )}
-      
-      {hasMultipleOptions && isOpen && (
+
+      {isOpen && ( // Ahora solo se muestra si isOpen (el derivado) es true
         <div 
           style={{
             position: 'absolute',
@@ -117,7 +114,7 @@ export default function CustomSelect({ value, onChange, options, integratedMenu 
               key={option.value}
               onClick={() => {
                 onChange(option.value);
-                setIsOpen(false);
+                set_isOpen(false);
               }}
               style={{
                 padding: '0.65rem 1rem',

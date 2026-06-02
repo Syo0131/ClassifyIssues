@@ -80,7 +80,7 @@ async function ensureSchema(): Promise<void> {
           id SERIAL PRIMARY KEY,
           username TEXT NOT NULL UNIQUE,
           password_hash TEXT NOT NULL,
-          role TEXT NOT NULL CHECK(role IN ('user', 'technician')),
+          role TEXT NOT NULL CHECK(role IN ('user', 'technician', 'admin')),
           projects JSONB NOT NULL DEFAULT '[]'::jsonb
         );
 
@@ -111,6 +111,11 @@ async function ensureSchema(): Promise<void> {
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
       `);
+
+      // Idempotent migrations: run on every boot, independent of CREATE TABLE outcome.
+      await pool.query(
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE`
+      );
     })();
   }
   await global.__pgSchemaReady;
@@ -132,7 +137,7 @@ export async function getUserByUsername(username: string): Promise<User | null> 
   await ensureSchema();
   const pool = getPool();
   const result = await pool.query(
-    `SELECT id, username, password_hash, role, projects
+    `SELECT id, username, password_hash, role, projects, is_active
      FROM users
      WHERE username = $1`,
     [username]
@@ -146,13 +151,26 @@ export async function getUserByUsername(username: string): Promise<User | null> 
     password_hash: row.password_hash,
     role: row.role,
     projects: parseJsonArray(row.projects),
+    is_active: row.is_active,
   };
+}
+
+export async function getUserActiveStatusById(id: number): Promise<boolean | null> {
+  await ensureSchema();
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT is_active FROM users WHERE id = $1`,
+    [id]
+  );
+  const row = result.rows[0];
+  if (!row) return null; // User no longer exists
+  return row.is_active === true;
 }
 
 export async function createUser(
   username: string,
   passwordHash: string,
-  role: 'user' | 'technician',
+  role: 'user' | 'technician' | 'admin',
   projects: string[] = []
 ): Promise<number> {
   await ensureSchema();
@@ -176,12 +194,13 @@ export async function updateUserPassword(userId: number, newPasswordHash: string
   return (result.rowCount ?? 0) > 0;
 }
 
-export async function getAllUsers(): Promise<User[]> {
+export async function getAllUsers(includeInactive = false): Promise<User[]> {
   await ensureSchema();
   const pool = getPool();
   const result = await pool.query(
-    `SELECT id, username, role, projects
+    `SELECT id, username, role, projects, is_active
      FROM users
+     ${includeInactive ? '' : 'WHERE is_active = TRUE'}
      ORDER BY username ASC`
   );
   return result.rows.map(row => ({
@@ -189,10 +208,11 @@ export async function getAllUsers(): Promise<User[]> {
     username: row.username,
     role: row.role,
     projects: parseJsonArray(row.projects),
+    is_active: row.is_active,
   }));
 }
 
-export async function updateUser(id: number, role: 'user' | 'technician', projects: string[] = []): Promise<boolean> {
+export async function updateUser(id: number, role: 'user' | 'technician' | 'admin', projects: string[] = []): Promise<boolean> {
   await ensureSchema();
   const pool = getPool();
   const result = await pool.query(
@@ -203,6 +223,33 @@ export async function updateUser(id: number, role: 'user' | 'technician', projec
   );
   return (result.rowCount ?? 0) > 0;
 }
+
+export async function setUserActive(id: number, isActive: boolean): Promise<boolean> {
+  await ensureSchema();
+  const pool = getPool();
+  const result = await pool.query(
+    `UPDATE users
+     SET is_active = $1
+     WHERE id = $2`,
+    [isActive, id]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** @deprecated Use setUserActive(id, false) for soft delete. */
+export async function deleteUser(id: number): Promise<boolean> {
+  return setUserActive(id, false);
+}
+
+export async function alterUserRoleConstraint(): Promise<void> {
+  await ensureSchema();
+  const pool = getPool();
+  await pool.query(`
+    ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+    ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user', 'technician', 'admin'));
+  `);
+}
+
 
 // Ticket Management
 export async function createTicket(
@@ -279,7 +326,7 @@ function escapeIlikePattern(s: string): string {
 /** Contadores para el perfil sin cargar todos los tickets. */
 export async function getProfileTicketCounters(
   userId: number,
-  role: 'user' | 'technician'
+  role: 'user' | 'technician' | 'admin',
 ): Promise<{ totalCreated: number; totalClosedByMe: number }> {
   await ensureSchema();
   const pool = getPool();

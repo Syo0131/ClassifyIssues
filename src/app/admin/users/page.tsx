@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { User } from '@/lib/types';
 import CustomSelect from '@/components/CustomSelect';
+import { ConfirmModal, AlertModal } from '@/components/Modal';
 
 function PasswordVisibilityIcon({ visible }: { visible: boolean }) {
   if (visible) {
@@ -159,14 +160,15 @@ function UserFormModal({ isOpen, onClose, user, onSave }: {
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Rol del Usuario</label>
             <CustomSelect
-              value={role}
-              onChange={(value) => setRole(value as 'user' | 'technician')}
-              options={[
-                { value: 'user', label: 'Usuario (Cliente)' },
-                { value: 'technician', label: 'Técnico (Soporte)' },
-              ]}
-              integratedMenu
-              minimal
+            value={role}
+            onChange={(value) => setRole(value as 'user' | 'technician' | 'admin')}
+            options={[
+              { value: 'user', label: 'Usuario (Cliente)' },
+              { value: 'technician', label: 'Técnico (Soporte)' },
+              { value: 'admin', label: 'Administrador' },
+            ]}
+            integratedMenu
+            minimal
             />
           </div>
 
@@ -202,15 +204,35 @@ export default function AdminUsersPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
+  // Confirm modal state
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Reactivate modal state
+  const [userToReactivate, setUserToReactivate] = useState<User | null>(null);
+  const [isReactivating, setIsReactivating] = useState(false);
+
+  // Alert modal state
+  const [alertState, setAlertState] = useState<{ open: boolean; title: string; message: string; variant: 'info' | 'success' | 'error' }>({
+    open: false,
+    title: '',
+    message: '',
+    variant: 'info',
+  });
+
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 8; // Max users per page
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/users');
+      const res = await fetch('/api/admin/users?includeInactive=true');
       const data = await res.json();
-      setUsers(data);
+      if (Array.isArray(data)) {
+        setUsers(data);
+      } else {
+        setUsers([]); // Ensure users is always an array
+      }
     } catch (err) {
       console.error('Failed to fetch users:', err);
     } finally {
@@ -252,6 +274,98 @@ export default function AdminUsersPage() {
     return false;
   };
 
+  const handleDeleteUser = async (userToDelete: User) => {
+    setUserToDelete(userToDelete);
+  };
+
+  const handleReactivateUser = (user: User) => {
+    setUserToReactivate(user);
+  };
+
+  const confirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: userToDelete.id }),
+      });
+
+      if (res.ok) {
+        setAlertState({
+          open: true,
+          title: 'Usuario desactivado',
+          message: `El usuario ${userToDelete.username} fue desactivado. Podrás reactivarlo cuando lo necesites.`,
+          variant: 'success',
+        });
+        setUserToDelete(null);
+        fetchUsers(); // Refresh the list
+      } else {
+        const errorData = await res.json();
+        console.error('Deactivate user error:', errorData.error);
+        setAlertState({
+          open: true,
+          title: 'Error al desactivar usuario',
+          message: errorData.error || 'Ocurrió un error inesperado.',
+          variant: 'error',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to deactivate user:', error);
+      setAlertState({
+        open: true,
+        title: 'Error al desactivar usuario',
+        message: 'No se pudo conectar con el servidor.',
+        variant: 'error',
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const confirmReactivateUser = async () => {
+    if (!userToReactivate) return;
+    setIsReactivating(true);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: userToReactivate.id, is_active: true }),
+      });
+
+      if (res.ok) {
+        setAlertState({
+          open: true,
+          title: 'Usuario reactivado',
+          message: `El usuario ${userToReactivate.username} fue reactivado correctamente.`,
+          variant: 'success',
+        });
+        setUserToReactivate(null);
+        fetchUsers();
+      } else {
+        const errorData = await res.json();
+        console.error('Reactivate user error:', errorData.error);
+        setAlertState({
+          open: true,
+          title: 'Error al reactivar usuario',
+          message: errorData.error || 'Ocurrió un error inesperado.',
+          variant: 'error',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to reactivate user:', error);
+      setAlertState({
+        open: true,
+        title: 'Error al reactivar usuario',
+        message: 'No se pudo conectar con el servidor.',
+        variant: 'error',
+      });
+    } finally {
+      setIsReactivating(false);
+    }
+  };
+
   const availableProjects = Array.from(
     new Set(
       users.flatMap(user =>
@@ -281,9 +395,9 @@ export default function AdminUsersPage() {
       </div>
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Usuarios del Sistema</h2>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <CustomSelect
               value={filterProject}
               onChange={setFilterProject}
@@ -307,41 +421,71 @@ export default function AdminUsersPage() {
         ) : (
           <>
             <div className="table-wrapper">
-              <table className="table">
+              <table className="table users-table">
+                <colgroup>
+                  <col style={{ width: '230px' }} />
+                  <col style={{ width: '150px' }} />
+                  <col />
+                  <col style={{ width: '210px' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>Usuario</th>
                     <th>Rol</th>
                     <th>Proyectos</th>
-                    <th>Acción</th>
+                    <th style={{ textAlign: 'right' }}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedUsers.map((u) => (
-                    <tr key={u.id}>
-                      <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{u.username}</td>
-                      <td>
-                        <span className="badge" style={{ 
-                          background: u.role === 'technician' ? 'rgba(124, 58, 237, 0.1)' : 'var(--bg-muted)', 
-                          color: u.role === 'technician' ? '#7c3aed' : 'var(--text-secondary)' 
-                        }}>
-                          {u.role === 'technician' ? 'Técnico' : 'Cliente'}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                        {u.projects && u.projects.length > 0 ? u.projects.join(', ') : 'General'}
-                      </td>
-                      <td>
-                        <button 
-                          onClick={() => handleEditUser(u)}
-                          className="btn-secondary"
-                          style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem' }}
+                  {paginatedUsers.map((u) => {
+                    const isInactive = u.is_active === false;
+                    return (
+                      <tr key={u.id} className={isInactive ? 'row-inactive' : undefined}>
+                        <td className="cell-user">
+                          <span className={`status-dot ${isInactive ? 'status-dot--inactive' : 'status-dot--active'}`} aria-hidden="true" />
+                          <span className="username-text">{u.username}</span>
+                          <span className={`badge badge-inactive ${isInactive ? '' : 'badge-inactive--hidden'}`}>Inactivo</span>
+                        </td>
+                        <td>
+                          <span className="badge" style={{
+                            background: u.role === 'admin' ? 'rgba(239, 68, 68, 0.1)' : u.role === 'technician' ? 'rgba(124, 58, 237, 0.1)' : 'var(--bg-muted)',
+                            color: u.role === 'admin' ? 'var(--danger)' : u.role === 'technician' ? '#7c3aed' : 'var(--text-secondary)'
+                          }}>
+                            {u.role === 'admin' ? 'Administrador' : u.role === 'technician' ? 'Técnico' : 'Cliente'}
+                          </span>
+                        </td>
+                        <td
+                          className="cell-projects"
+                          title={u.projects && u.projects.length > 0 ? u.projects.join(', ') : 'General'}
                         >
-                          Editar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                          {u.projects && u.projects.length > 0 ? u.projects.join(', ') : 'General'}
+                        </td>
+                        <td className="cell-actions">
+                          <button
+                            onClick={() => handleEditUser(u)}
+                            className="btn-secondary btn-sm"
+                          >
+                            Editar
+                          </button>
+                          {isInactive ? (
+                            <button
+                              onClick={() => handleReactivateUser(u)}
+                              className="btn-reactivate btn-sm"
+                            >
+                              Reactivar
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleDeleteUser(u)}
+                              className="btn-danger btn-sm"
+                            >
+                              Desactivar
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {filteredUsers.length === 0 && (
                     <tr>
                       <td colSpan={4} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
@@ -387,8 +531,131 @@ export default function AdminUsersPage() {
         user={selectedUser}
         onSave={handleSaveUser}
       />
-      
+
+      <ConfirmModal
+        isOpen={userToDelete !== null}
+        onClose={() => !isDeleting && setUserToDelete(null)}
+        onConfirm={confirmDeleteUser}
+        title="Desactivar usuario"
+        message={`¿Quieres desactivar al usuario ${userToDelete?.username}? No podrá iniciar sesión, pero sus datos y tickets se conservan. Podrás reactivarlo más tarde.`}
+        confirmText="Desactivar"
+        cancelText="Cancelar"
+        variant="danger"
+        loading={isDeleting}
+      />
+
+      <ConfirmModal
+        isOpen={userToReactivate !== null}
+        onClose={() => !isReactivating && setUserToReactivate(null)}
+        onConfirm={confirmReactivateUser}
+        title="Reactivar usuario"
+        message={`¿Quieres reactivar al usuario ${userToReactivate?.username}? Volverá a poder iniciar sesión con su rol y proyectos anteriores.`}
+        confirmText="Reactivar"
+        cancelText="Cancelar"
+        variant="primary"
+        loading={isReactivating}
+      />
+
+      <AlertModal
+        isOpen={alertState.open}
+        onClose={() => setAlertState(prev => ({ ...prev, open: false }))}
+        title={alertState.title}
+        message={alertState.message}
+        variant={alertState.variant}
+      />
+
       <style jsx>{`
+        .users-table {
+          table-layout: fixed;
+          width: 100%;
+        }
+        .users-table th {
+          white-space: nowrap;
+        }
+        .users-table td {
+          vertical-align: middle;
+        }
+        .users-table .cell-user {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          font-weight: 600;
+          color: var(--text-primary);
+          overflow: hidden;
+        }
+        .users-table .username-text {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          min-width: 0;
+          flex-shrink: 1;
+        }
+        .users-table .cell-projects {
+          font-size: 0.85rem;
+          color: var(--text-secondary);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .users-table .cell-actions {
+          text-align: right;
+          white-space: nowrap;
+        }
+        .users-table .cell-actions :global(.btn-sm) {
+          padding: 0.35rem 0.75rem;
+          font-size: 0.75rem;
+          margin-left: 0.4rem;
+        }
+        .users-table .cell-actions :global(.btn-sm):first-child {
+          margin-left: 0;
+        }
+        .users-table :global(.row-inactive) td {
+          color: var(--text-muted);
+        }
+        .users-table :global(.row-inactive) .username-text {
+          color: var(--text-secondary);
+          text-decoration: line-through;
+          text-decoration-color: rgba(148, 163, 184, 0.5);
+        }
+        .status-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          flex-shrink: 0;
+          display: inline-block;
+        }
+        .status-dot--active {
+          background: var(--success);
+          box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+        }
+        .status-dot--inactive {
+          background: var(--text-muted);
+          box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.12);
+        }
+        :global(.badge-inactive) {
+          background: rgba(100, 116, 139, 0.15) !important;
+          color: var(--text-secondary) !important;
+          flex-shrink: 0;
+        }
+        :global(.badge-inactive--hidden) {
+          visibility: hidden;
+        }
+        :global(.btn-reactivate) {
+          background: var(--bg-card);
+          color: var(--success);
+          border: 1px solid var(--success);
+          border-radius: var(--radius-md);
+          font-weight: 600;
+          transition: all var(--transition-base);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+        }
+        :global(.btn-reactivate:hover) {
+          background: var(--success);
+          color: white;
+        }
         @media (max-width: 768px) {
           div[style*="grid-template-columns: 1fr 380px"] {
             grid-template-columns: 1fr !important;
@@ -398,3 +665,4 @@ export default function AdminUsersPage() {
     </div>
   );
 }
+

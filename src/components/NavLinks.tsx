@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-export default function NavLinks({ role }: { role: string | null }) {
+export default function NavLinks({ role }: { role: 'user' | 'technician' | 'admin' | null }) {
   const pathname = usePathname();
 
   const getLinkStyle = (path: string) => {
@@ -30,7 +30,7 @@ export default function NavLinks({ role }: { role: string | null }) {
       <Link href="/dashboard" style={getLinkStyle('/dashboard')}>
         Tickets
       </Link>
-      {role === 'technician' && (
+      {role === 'admin' && (
         <Link href="/admin/users" style={getLinkStyle('/admin/users')}>
           Usuarios
         </Link>

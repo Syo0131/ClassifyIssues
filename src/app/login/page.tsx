@@ -1,15 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function LoginPage() {
+function LoginForm() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const reason = searchParams.get('reason');
+  const expired = searchParams.get('expired');
+
+  useEffect(() => {
+    if (reason === 'inactive') {
+      setError('Tu cuenta fue desactivada. Contacta al administrador.');
+    } else if (expired === '1') {
+      setError('Tu sesión expiró. Vuelve a iniciar sesión.');
+    }
+  }, [reason, expired]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,7 +54,7 @@ export default function LoginPage() {
         <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>
           Ingresa tus credenciales para acceder al sistema de tickets.
         </p>
-        
+
         {error && (
           <div className="error-message" style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)', padding: '0.75rem', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.9rem', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
             {error}
@@ -87,5 +98,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

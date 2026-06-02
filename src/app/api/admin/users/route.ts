@@ -1,15 +1,17 @@
 import { NextResponse } from 'next/server';
-import { createUser, getUserByUsername, getAllUsers, updateUser, updateUserPassword } from '@/lib/db';
+import { createUser, getUserByUsername, getAllUsers, updateUser, updateUserPassword, setUserActive } from '@/lib/db';
 import { auth } from '@/auth';
 import bcrypt from 'bcryptjs';
 
 export const GET = auth(async function GET(req) {
   if (!req.auth) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const user = req.auth.user as any;
-  if (user.role !== 'technician') return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  if (user.role !== 'admin') return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
 
   try {
-    const users = await getAllUsers();
+    const { searchParams } = new URL(req.url);
+    const includeInactive = searchParams.get('includeInactive') === 'true';
+    const users = await getAllUsers(includeInactive);
     return NextResponse.json(users);
   } catch (error) {
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
@@ -22,8 +24,8 @@ export const POST = auth(async function POST(req) {
   }
 
   const user = req.auth.user as any;
-  if (user.role !== 'technician') {
-    return NextResponse.json({ error: "Only technicians can create users" }, { status: 403 });
+  if (user.role !== 'admin') {
+    return NextResponse.json({ error: "Only admins can create users" }, { status: 403 });
   }
 
   try {
@@ -47,20 +49,31 @@ export const POST = auth(async function POST(req) {
   }
 }) as any;
 
+
 export const PATCH = auth(async function PATCH(req) {
   if (!req.auth) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const user = req.auth.user as any;
-  if (user.role !== 'technician') return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  if (user.role !== 'admin') return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
 
   try {
     const body = await req.json();
-    const { id, role, projects, password } = body;
+    const { id, role, projects, password, is_active } = body;
 
-    if (!id || !role) {
-      return NextResponse.json({ error: "ID and role are required" }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: "ID is required" }, { status: 400 });
     }
 
-    await updateUser(id, role, projects || []);
+    if (typeof is_active === 'boolean') {
+      if (user.id === id && is_active === false) {
+        return NextResponse.json({ error: "Cannot deactivate your own admin account" }, { status: 403 });
+      }
+      await setUserActive(id, is_active);
+    } else {
+      if (!role) {
+        return NextResponse.json({ error: "ID and role are required" }, { status: 400 });
+      }
+      await updateUser(id, role, projects || []);
+    }
 
     if (password && password.trim().length >= 6) {
       const hash = await bcrypt.hash(password.trim(), 10);
@@ -69,6 +82,35 @@ export const PATCH = auth(async function PATCH(req) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    console.error('PATCH /api/admin/users error:', error);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }) as any;
+
+export const DELETE = auth(async function DELETE(req) {
+  if (!req.auth) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const user = req.auth.user as any;
+  if (user.role !== 'admin') return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+
+  try {
+    const body = await req.json();
+    const { id } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 400 });
+    }
+
+    // Ensure an admin cannot deactivate themselves
+    if (user.id === id) {
+      return NextResponse.json({ error: "Cannot deactivate your own admin account" }, { status: 403 });
+    }
+
+    await setUserActive(id, false);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('DELETE /api/admin/users error:', error);
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  }
+}) as any;
+

@@ -1,9 +1,10 @@
 export interface User {
   id: number;
   username: string;
-  role: 'user' | 'technician';
+  role: 'user' | 'technician' | 'admin';
   password_hash?: string;
   projects?: string[];
+  is_active?: boolean;
 }
 
 export interface AnalysisResult {
