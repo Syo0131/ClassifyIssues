@@ -42,10 +42,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!isValid) return null;
 
         return {
-          id: user.id.toString(),
+          id: user.id,
           name: user.username,
           role: user.role,
-          projects: user.projects,
+          projects: user.projects || [],
         };
       },
     }),

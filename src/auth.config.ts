@@ -34,7 +34,7 @@ export const authConfig = {
     async jwt({ token, user }) {
       const nowInSeconds = Math.floor(Date.now() / 1000);
       if (typeof token.exp === "number" && token.exp <= nowInSeconds) {
-        return {};
+        return null;
       }
 
       if (user) {
@@ -43,7 +43,7 @@ export const authConfig = {
         token.projects = (user as any).projects || [];
         token.sessionVersion = SESSION_VERSION;
       } else if (token.sessionVersion !== SESSION_VERSION) {
-        return {};
+        return null;
       }
       return token;
     },

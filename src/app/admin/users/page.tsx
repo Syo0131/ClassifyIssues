@@ -35,7 +35,7 @@ function UserFormModal({ isOpen, onClose, user, onSave }: {
   const [username, setUsername] = useState(user?.username || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [role, setRole] = useState<'user' | 'technician'>(user?.role || 'user');
+  const [role, setRole] = useState<'user' | 'technician' | 'admin'>(user?.role || 'user');
   const [projectsInput, setProjectsInput] = useState(user?.projects?.join(', ') || '');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
