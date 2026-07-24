@@ -1,16 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { Ticket, Comment, TicketStatus } from '@/lib/types';
+import { Budget, Ticket, Comment, TicketStatus } from '@/lib/types';
 import { useRouter } from 'next/navigation';
+import { canManageTicketStatus, canViewAllTickets } from '@/lib/permissions';
+import DevelopmentSpecPanel from '@/components/DevelopmentSpecPanel';
 
 interface TicketDetailClientProps {
   ticket: Ticket;
   initialComments: Comment[];
   currentUser: any;
+  /** Calculado en el servidor (la tarifa vive en variables de entorno). */
+  budget?: Budget | null;
 }
 
-export default function TicketDetailClient({ ticket, initialComments, currentUser }: TicketDetailClientProps) {
+export default function TicketDetailClient({ ticket, initialComments, currentUser, budget = null }: TicketDetailClientProps) {
   const [comments, setComments] = useState<Comment[]>(initialComments);
   const [newComment, setNewComment] = useState('');
   const [status, setStatus] = useState<TicketStatus>(ticket.status);
@@ -71,7 +75,12 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
     }
   };
 
-  const isTechnician = currentUser.role === 'technician';
+  // `isStaff` gobierna lo que se VE (análisis de IA, resumen en la cabecera);
+  // `canManageStatus` lo que se PUEDE HACER. El admin entra en el primero pero
+  // no en el segundo: la gestión operativa sigue siendo del técnico.
+  const isStaff = canViewAllTickets(currentUser.role);
+  const canManageStatus = canManageTicketStatus(currentUser.role);
+  const isDevelopment = ticket.type === 'desarrollo' && !!ticket.spec;
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '1rem 0' }}>
@@ -86,9 +95,21 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
             <span className={`badge status-${status}`} style={{ fontSize: '0.7rem', padding: '0.25rem 0.6rem' }}>
               {status === 'open' ? 'Abierto' : status === 'waiting_on_client' ? 'Esperando Cliente' : 'Finalizado'}
             </span>
+            <span
+              className="badge"
+              style={{
+                fontSize: '0.7rem',
+                padding: '0.25rem 0.6rem',
+                background: 'transparent',
+                border: `1px solid ${isDevelopment ? 'var(--primary)' : 'var(--border-subtle)'}`,
+                color: isDevelopment ? 'var(--primary)' : 'var(--text-muted)',
+              }}
+            >
+              {isDevelopment ? '🧩 Desarrollo' : '🛟 Incidencia'}
+            </span>
           </div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, lineHeight: 1.3, maxWidth: '800px' }}>
-            {isTechnician ? ticket.summary : 'Detalles de la Solicitud'}
+            {isStaff ? ticket.summary : 'Detalles de la Solicitud'}
           </h1>
         </div>
       </div>
@@ -113,6 +134,13 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
               {ticket.raw_text}
             </div>
           </div>
+
+          {/* El PRD/TRD sólo lo ve el personal interno: son datos generados por
+              IA/reglas que hay que validar antes de compartirlos con el cliente.
+              Para el cliente, un ticket de desarrollo se ve como uno normal. */}
+          {isStaff && isDevelopment && ticket.spec && (
+            <DevelopmentSpecPanel ticketId={ticket.id} spec={ticket.spec} budget={budget} />
+          )}
 
           <hr style={{ border: 'none', borderTop: '1px dashed var(--border-subtle)', margin: '0' }} />
 
@@ -198,8 +226,8 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
         {/* BARRA LATERAL */}
         <aside style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
           
-          {/* Análisis de IA (Solo Técnicos) */}
-          {isTechnician && (
+          {/* Análisis de IA (personal interno: técnicos y admins) */}
+          {isStaff && (
             <div>
               <h3 style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem' }}>
                 Propiedades (IA)
@@ -236,8 +264,8 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
             </div>
           )}
 
-          {/* Acciones (Solo Técnicos) */}
-          {isTechnician && (
+          {/* Acciones (solo técnicos: el admin ve el ticket pero no lo gestiona) */}
+          {canManageStatus && (
             <div>
                <h3 style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem' }}>
                 Acciones

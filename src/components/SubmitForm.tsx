@@ -30,7 +30,7 @@ export default function SubmitForm({ projects = [], onResult, onLoading }: Submi
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text.trim(), project: selectedProject }),
+        body: JSON.stringify({ type: 'incidencia', text: text.trim(), project: selectedProject }),
       });
 
       if (!res.ok) {

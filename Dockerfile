@@ -1,4 +1,8 @@
 FROM node:20-alpine AS base
+# Corepack instala la versión de pnpm declarada en el campo "packageManager"
+# de package.json, así que la imagen y el entorno local usan siempre la misma.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -6,9 +10,10 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 
-# Install dependencies based on the preferred package manager
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json pnpm-lock.yaml ./
+# --frozen-lockfile es el equivalente a `npm ci`: falla si el lockfile no
+# concuerda con package.json en lugar de actualizarlo silenciosamente.
+RUN pnpm install --frozen-lockfile
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -21,7 +26,7 @@ COPY . .
 # Uncomment the following line in case you want to disable telemetry during the build.
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN npm run build
+RUN pnpm build
 
 # Production image, copy all the files and run next
 FROM base AS runner

@@ -6,6 +6,7 @@ import {
   getTicketById,
   getUserByUsername,
 } from '@/lib/db';
+import { canViewTicket } from '@/lib/permissions';
 import { auth } from '@/auth';
 
 export const GET = auth(async function GET(req, { params }) {
@@ -24,7 +25,7 @@ export const GET = auth(async function GET(req, { params }) {
     const ticket = await getTicketById(Number(id));
     if (!ticket) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
 
-    if (user.role !== 'technician' && ticket.user_id !== dbUser.id) {
+    if (!canViewTicket(user.role, dbUser.id, ticket.user_id)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
@@ -51,7 +52,7 @@ export const POST = auth(async function POST(req, { params }) {
     const ticket = await getTicketById(Number(id));
     if (!ticket) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
 
-    if (user.role !== 'technician' && ticket.user_id !== dbUser.id) {
+    if (!canViewTicket(user.role, dbUser.id, ticket.user_id)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 

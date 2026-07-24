@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getTicketById, getUserByUsername, updateTicketStatus } from '@/lib/db';
 import type { TicketStatus } from '@/lib/types';
+import { canManageTicketStatus, canViewTicket } from '@/lib/permissions';
 import { auth } from '@/auth';
 
 const ALLOWED_STATUS: TicketStatus[] = ['open', 'waiting_on_client', 'closed'];
@@ -17,7 +18,9 @@ export const PATCH = auth(async function PATCH(req, { params }) {
     return NextResponse.json({ error: 'User not found in database.' }, { status: 404 });
   }
 
-  if (user.role !== 'technician') {
+  // El admin ve todos los tickets pero no los gestiona: cambiar el estado sigue
+  // siendo competencia del técnico.
+  if (!canManageTicketStatus(user.role)) {
     return NextResponse.json({ error: "Only technicians can update status" }, { status: 403 });
   }
 
@@ -62,8 +65,8 @@ export const GET = auth(async function GET(req, { params }) {
       return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
     }
 
-    // Security: user can only see their own tickets
-    if (user.role !== 'technician' && ticket.user_id !== dbUser.id) {
+    // Security: el cliente sólo ve los tickets que ha creado.
+    if (!canViewTicket(user.role, dbUser.id, ticket.user_id)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 

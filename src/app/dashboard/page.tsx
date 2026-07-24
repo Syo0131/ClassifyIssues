@@ -18,8 +18,8 @@ function getTicketsPollMs(): number {
 }
 
 export default function DashboardPage() {
-  const mountedRef = useRef(true);
   const initialLoadDone = useRef(false);
+  const requestSeqRef = useRef(0);
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [total, setTotal] = useState(0);
@@ -33,6 +33,7 @@ export default function DashboardPage() {
   const [filterPriority, setFilterPriority] = useState("all");
   const [filterStatus, setFilterStatus] = useState("active");
   const [filterProject, setFilterProject] = useState("all");
+  const [filterType, setFilterType] = useState("all");
   const [sortOrder, setSortOrder] = useState("newest");
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -50,10 +51,20 @@ export default function DashboardPage() {
     setCurrentPage(1);
   }, [debouncedSearch]);
 
+  // Las peticiones obsoletas se descartan por número de secuencia en lugar de
+  // cancelarse con AbortController.
+  //
+  // Abortar un fetch cuyo cuerpo se está leyendo deja un rechazo pendiente en
+  // el stream interno de la respuesta, fuera del alcance de este try/catch: es
+  // lo que el overlay de Next reportaba como "Runtime AbortError". El coste de
+  // no cancelar es dejar terminar una respuesta JSON pequeña que ya no se usa.
   const fetchTickets = useCallback(
-    async (signal?: AbortSignal) => {
-      // ✅ ELIMINADO: La llamada síncrona a setLoading(true) que causaba el error de ESLint
-      if (initialLoadDone.current && mountedRef.current) {
+    async () => {
+      const requestId = ++requestSeqRef.current;
+      // Sólo la petición más reciente puede tocar el estado.
+      const isStale = () => requestSeqRef.current !== requestId;
+
+      if (initialLoadDone.current) {
         setRefreshing(true);
       }
 
@@ -64,14 +75,15 @@ export default function DashboardPage() {
       params.set("status", filterStatus);
       params.set("priority", filterPriority);
       params.set("project", filterProject);
+      params.set("type", filterType);
       if (debouncedSearch) params.set("q", debouncedSearch);
 
       try {
-        const res = await fetch(`/api/tickets?${params.toString()}`, {
-          signal,
-        });
+        const res = await fetch(`/api/tickets?${params.toString()}`);
         const data = await res.json().catch(() => null);
-        if (!mountedRef.current) return;
+        // Llegó una respuesta más nueva mientras esperábamos: la descartamos en
+        // silencio para que no pise resultados más recientes.
+        if (isStale()) return;
 
         if (!res.ok) {
           setFetchError(
@@ -103,15 +115,13 @@ export default function DashboardPage() {
         setProjectOptions(Array.isArray(data.projects) ? data.projects : []);
         initialLoadDone.current = true;
       } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (isStale()) return;
         console.error("Failed to fetch tickets:", err);
-        if (mountedRef.current) {
-          setFetchError("Error de conexión al cargar los tickets.");
-          setTickets([]);
-          setTotal(0);
-        }
+        setFetchError("Error de conexión al cargar los tickets.");
+        setTickets([]);
+        setTotal(0);
       } finally {
-        if (mountedRef.current) {
+        if (!isStale()) {
           setLoading(false);
           setRefreshing(false);
         }
@@ -123,20 +133,16 @@ export default function DashboardPage() {
       filterPriority,
       filterStatus,
       filterProject,
+      filterType,
       sortOrder,
     ],
   );
 
   useEffect(() => {
-    mountedRef.current = true;
-    const controller = new AbortController();
-
-    // Helper para asegurar que todas las peticiones usen el mismo signal
     const doFetch = () => {
-      void fetchTickets(controller.signal);
+      void fetchTickets();
     };
 
-    // ✅ ELIMINADO: El comentario de eslint-disable-next-line
     doFetch();
 
     const pollMs = getTicketsPollMs();
@@ -160,15 +166,14 @@ export default function DashboardPage() {
     document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
-      mountedRef.current = false;
-      try {
-        controller.abort();
-      } catch (error) {
-        // Ignore AbortError if the signal was already aborted
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
-          console.error("Error while aborting controller:", error);
-        }
-      }
+      // Invalida las peticiones en vuelo: al cambiar de filtros o desmontar, sus
+      // respuestas ya no deben tocar el estado.
+      //
+      // La regla avisa de leer un ref en el cleanup, pensando en refs a nodos
+      // del DOM. Aquí es justo lo que se busca: queremos el contador vigente en
+      // el momento del cleanup, no el capturado al montar el efecto.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      requestSeqRef.current++;
       window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", onVisibility);
     };
@@ -190,6 +195,10 @@ export default function DashboardPage() {
   };
   const setProjectFilter = (v: string) => {
     setFilterProject(v);
+    setCurrentPage(1);
+  };
+  const setTypeFilter = (v: string) => {
+    setFilterType(v);
     setCurrentPage(1);
   };
 
@@ -322,6 +331,18 @@ export default function DashboardPage() {
                 { value: "high", label: "Alta" },
                 { value: "medium", label: "Media" },
                 { value: "low", label: "Baja" },
+              ]}
+              integratedMenu
+              minimal
+            />
+
+            <CustomSelect
+              value={filterType}
+              onChange={setTypeFilter}
+              options={[
+                { value: "all", label: "Incidencias y Desarrollos" },
+                { value: "incidencia", label: "Solo Incidencias" },
+                { value: "desarrollo", label: "Solo Desarrollos" },
               ]}
               integratedMenu
               minimal

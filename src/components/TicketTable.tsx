@@ -24,6 +24,7 @@ export default function TicketTable({ tickets }: TicketTableProps) {
           <thead>
             <tr>
               <th>Número</th>
+              <th>Tipo</th>
               <th>Solicitud</th>
               <th style={{ minWidth: '150px' }}>Solicitante</th>
               <th>Proyecto</th>
@@ -37,6 +38,19 @@ export default function TicketTable({ tickets }: TicketTableProps) {
             {tickets.map((ticket) => (
               <tr key={ticket.id}>
                 <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{ticket.id}</td>
+                <td>
+                  <span
+                    className="badge"
+                    style={{
+                      whiteSpace: 'nowrap',
+                      background: 'transparent',
+                      border: `1px solid ${ticket.type === 'desarrollo' ? 'var(--primary)' : 'var(--border-subtle)'}`,
+                      color: ticket.type === 'desarrollo' ? 'var(--primary)' : 'var(--text-muted)',
+                    }}
+                  >
+                    {ticket.type === 'desarrollo' ? '🧩 Desarrollo' : '🛟 Incidencia'}
+                  </span>
+                </td>
                 <td>
                   <div style={{ maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={ticket.raw_text}>
                     {ticket.raw_text}

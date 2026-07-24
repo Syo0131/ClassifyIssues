@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { DashboardStats } from '@/lib/types';
+import { DashboardStats, UserRole } from '@/lib/types';
+import { ROLE_LABEL } from '@/lib/permissions';
 
 function PasswordVisibilityIcon({ visible }: { visible: boolean }) {
   if (visible) {
@@ -125,7 +126,7 @@ export default function ProfileClient({ user }: { user: any }) {
           <div>
             <h2 style={{ fontSize: '1.65rem', marginBottom: '0.15rem' }}>{user.name}</h2>
             <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.08em' }}>
-              {user.role === 'technician' ? 'Técnico de Soporte' : 'Cliente'}
+              {ROLE_LABEL[user.role as UserRole] ?? ROLE_LABEL.user}
             </span>
           </div>
         </div>

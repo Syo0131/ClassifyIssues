@@ -37,7 +37,8 @@ function LoginForm() {
       if (result?.error) {
         setError('Usuario o contraseña incorrectos');
       } else {
-        router.push('/dashboard');
+        // Tras el login el usuario elige vía (incidencia / desarrollo) en `/`.
+        router.push('/');
         router.refresh();
       }
     } catch (err) {

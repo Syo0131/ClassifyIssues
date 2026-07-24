@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getTicketsPaged, getUserByUsername } from '@/lib/db';
 import type { TicketListFilters } from '@/lib/types';
+import { canViewAllTickets } from '@/lib/permissions';
 import { auth } from '@/auth';
 
 const STATUS_OPTIONS = ['all', 'active', 'open', 'waiting_on_client', 'closed'] as const;
 const PRIORITY_OPTIONS = ['all', 'low', 'medium', 'high', 'critical'] as const;
+const TYPE_OPTIONS = ['all', 'incidencia', 'desarrollo'] as const;
 const SORT_OPTIONS = ['newest', 'oldest'] as const;
 
 function parseEnumParam<T extends readonly string[]>(
@@ -34,15 +36,18 @@ export const GET = auth(async function GET(req) {
     const sort = parseEnumParam(url.searchParams.get('sort'), SORT_OPTIONS, 'newest');
     const status = parseEnumParam(url.searchParams.get('status'), STATUS_OPTIONS, 'active');
     const priority = parseEnumParam(url.searchParams.get('priority'), PRIORITY_OPTIONS, 'all');
+    const type = parseEnumParam(url.searchParams.get('type'), TYPE_OPTIONS, 'all');
     const projectRaw = url.searchParams.get('project') ?? 'all';
     const project =
       projectRaw === 'all' ? 'all' : projectRaw.trim().slice(0, 200) || 'all';
     const q = (url.searchParams.get('q') ?? '').trim().slice(0, 200);
 
     const filters: TicketListFilters = {
-      userIdScope: user.role === 'technician' ? undefined : dbUser.id,
+      // undefined = sin filtro por autor, es decir, toda la bandeja.
+      userIdScope: canViewAllTickets(user.role) ? undefined : dbUser.id,
       status,
       priority,
+      type,
       project,
       search: q,
     };

@@ -27,7 +27,8 @@ export const authConfig = {
         return Response.redirect(new URL("/login", baseUrl));
       }
       if (isLoggedIn && isLoginPage) {
-        return Response.redirect(new URL("/dashboard", baseUrl));
+        // `/` es el selector de vía (incidencia / desarrollo).
+        return Response.redirect(new URL("/", baseUrl));
       }
       return true;
     },

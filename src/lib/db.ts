@@ -8,6 +8,8 @@ import {
   TicketStatus,
   TicketListFilters,
   TicketListPageResult,
+  TicketType,
+  DevelopmentSpec,
 } from './types';
 
 type JsonArrayValue = string[] | unknown[] | string | null | undefined;
@@ -116,9 +118,32 @@ async function ensureSchema(): Promise<void> {
       await pool.query(
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE`
       );
+      // Vía de gestión del ticket. Los tickets previos a esta columna son
+      // incidencias, de ahí el DEFAULT.
+      await pool.query(
+        `ALTER TABLE tickets ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'incidencia'`
+      );
+      // PRD/TRD generado por la IA; NULL en incidencias.
+      await pool.query(
+        `ALTER TABLE tickets ADD COLUMN IF NOT EXISTS spec JSONB`
+      );
     })();
   }
   await global.__pgSchemaReady;
+}
+
+function parseSpec(value: unknown): DevelopmentSpec | null {
+  if (!value) return null;
+  // pg devuelve JSONB ya deserializado, pero toleramos texto por si la columna
+  // fuese TEXT en alguna instalación antigua.
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) as DevelopmentSpec;
+    } catch {
+      return null;
+    }
+  }
+  return typeof value === 'object' ? (value as DevelopmentSpec) : null;
 }
 
 function rowToTicket(row: any): Ticket {
@@ -128,6 +153,8 @@ function rowToTicket(row: any): Ticket {
     actions: parseJsonArray(row.actions),
     priority: row.priority as Ticket['priority'],
     status: row.status as TicketStatus,
+    type: (row.type as TicketType) || 'incidencia',
+    spec: parseSpec(row.spec),
     userProjects: parseJsonArray(row.userprojects),
   };
 }
@@ -256,16 +283,20 @@ export async function createTicket(
   userId: number,
   project: string,
   rawText: string,
-  analysis: AnalysisResult
+  analysis: AnalysisResult,
+  options: { type?: TicketType; spec?: DevelopmentSpec | null } = {}
 ): Promise<Ticket> {
   await ensureSchema();
   const pool = getPool();
 
+  const type: TicketType = options.type === 'desarrollo' ? 'desarrollo' : 'incidencia';
+  const spec = type === 'desarrollo' && options.spec ? JSON.stringify(options.spec) : null;
+
   const insertResult = await pool.query(
     `INSERT INTO tickets (
-       user_id, project, raw_text, category, confidence, issues, actions, summary, priority, status, source
+       user_id, project, raw_text, category, confidence, issues, actions, summary, priority, status, source, type, spec
      )
-     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb)
      RETURNING id`,
     [
       userId,
@@ -279,6 +310,8 @@ export async function createTicket(
       analysis.priority,
       'open',
       analysis.source,
+      type,
+      spec,
     ]
   );
 
@@ -390,6 +423,11 @@ function buildTicketListWhere(filters: TicketListFilters): { sql: string; params
   if (filters.priority !== 'all') {
     parts.push(`t.priority = $${i++}`);
     params.push(filters.priority);
+  }
+
+  if (filters.type !== 'all') {
+    parts.push(`COALESCE(t.type, 'incidencia') = $${i++}`);
+    params.push(filters.type);
   }
 
   if (filters.project !== 'all') {
