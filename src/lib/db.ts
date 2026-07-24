@@ -327,6 +327,49 @@ export async function createTicket(
   return rowToTicket(rowResult.rows[0]);
 }
 
+/**
+ * Rellena el análisis de un ticket de desarrollo que se creó "pendiente".
+ *
+ * Lo llama la generación en segundo plano cuando el PRD/TRD ya está listo:
+ * sustituye los valores placeholder (categoría, prioridad, resumen...) por los
+ * derivados del spec y guarda el spec completo. A partir de aquí `spec` deja de
+ * ser NULL, que es la señal de "análisis terminado".
+ */
+export async function applyDevTicketAnalysis(
+  ticketId: number,
+  analysis: AnalysisResult,
+  spec: DevelopmentSpec
+): Promise<boolean> {
+  await ensureSchema();
+  const pool = getPool();
+
+  const result = await pool.query(
+    `UPDATE tickets
+       SET category = $2,
+           confidence = $3,
+           issues = $4::jsonb,
+           actions = $5::jsonb,
+           summary = $6,
+           priority = $7,
+           source = $8,
+           spec = $9::jsonb
+     WHERE id = $1 AND type = 'desarrollo'`,
+    [
+      ticketId,
+      analysis.category,
+      analysis.confidence,
+      JSON.stringify(analysis.issues),
+      JSON.stringify(analysis.actions),
+      analysis.summary,
+      analysis.priority,
+      analysis.source,
+      JSON.stringify(spec),
+    ]
+  );
+
+  return (result.rowCount ?? 0) > 0;
+}
+
 export async function getAllTickets(userId?: number): Promise<Ticket[]> {
   await ensureSchema();
   const pool = getPool();

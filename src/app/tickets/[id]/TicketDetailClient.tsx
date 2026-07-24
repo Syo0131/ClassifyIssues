@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Budget, Ticket, Comment, TicketStatus } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 import { canManageTicketStatus, canViewAllTickets } from '@/lib/permissions';
@@ -80,7 +80,20 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
   // no en el segundo: la gestión operativa sigue siendo del técnico.
   const isStaff = canViewAllTickets(currentUser.role);
   const canManageStatus = canManageTicketStatus(currentUser.role);
-  const isDevelopment = ticket.type === 'desarrollo' && !!ticket.spec;
+  const isDevType = ticket.type === 'desarrollo';
+  const hasSpec = !!ticket.spec;
+  const isDevelopment = isDevType && hasSpec;
+  // Ticket de desarrollo cuyo PRD/TRD aún se está generando en segundo plano.
+  const analysisPending = isDevType && !hasSpec;
+
+  // Mientras el análisis está pendiente, el staff refresca la página cada pocos
+  // segundos (router.refresh revalida el server component) hasta que el spec
+  // llega. Sólo corre para el staff, que es quien ve el panel.
+  useEffect(() => {
+    if (!(isStaff && analysisPending)) return;
+    const id = window.setInterval(() => router.refresh(), 4000);
+    return () => window.clearInterval(id);
+  }, [isStaff, analysisPending, router]);
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '1rem 0' }}>
@@ -138,6 +151,16 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
           {/* El PRD/TRD sólo lo ve el personal interno: son datos generados por
               IA/reglas que hay que validar antes de compartirlos con el cliente.
               Para el cliente, un ticket de desarrollo se ve como uno normal. */}
+          {isStaff && analysisPending && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1.25rem 1.5rem', border: '1px solid var(--border-subtle)', borderRadius: '12px', background: 'var(--bg-card)' }}>
+              <div className="spinner" style={{ width: '22px', height: '22px', color: 'var(--primary)', borderWidth: '2px', flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>Generando PRD, TRD y presupuesto…</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>El análisis se está ejecutando. Esta vista se actualizará sola al terminar.</div>
+              </div>
+            </div>
+          )}
+
           {isStaff && isDevelopment && ticket.spec && (
             <DevelopmentSpecPanel ticketId={ticket.id} spec={ticket.spec} budget={budget} />
           )}

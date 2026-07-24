@@ -16,7 +16,9 @@ export interface AnalysisResult {
   actions: string[];
   summary: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
-  source: 'gemini' | 'mock';
+  // 'pending' = ticket de desarrollo recién creado cuyo PRD/TRD todavía se está
+  // generando en segundo plano.
+  source: 'gemini' | 'mock' | 'pending';
 }
 
 export type TicketStatus = 'open' | 'waiting_on_client' | 'closed';

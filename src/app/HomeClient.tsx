@@ -7,18 +7,14 @@ import ModeSelector from '@/components/ModeSelector';
 import { Ticket, TicketType } from '@/lib/types';
 import Link from 'next/link';
 
-const COPY: Record<TicketType, { title: string; subtitle: string; loading: string; loadingHint: string }> = {
+const COPY: Record<TicketType, { title: string; subtitle: string }> = {
   incidencia: {
     title: 'Reportar Incidencia',
     subtitle: 'Describe tu situación o problema. Deja que nuestra IA lo organice.',
-    loading: 'Analizando solicitud...',
-    loadingHint: 'Clasificando categoría y prioridad.',
   },
   desarrollo: {
     title: 'Nuevo Desarrollo',
-    subtitle: 'Cuéntanos qué quieres construir. La IA lo convertirá en PRD, TRD y presupuesto.',
-    loading: 'Redactando PRD y TRD...',
-    loadingHint: 'Analizando requisitos y estimando el esfuerzo. Puede tardar unos segundos.',
+    subtitle: 'Cuéntanos qué quieres construir y nuestro equipo lo evaluará.',
   },
 };
 
@@ -61,7 +57,9 @@ export default function HomeClient({ projects = [] }: { projects: string[] }) {
 
           <div style={{ width: '100%' }}>
             {mode === 'desarrollo' ? (
-              <DevelopmentForm projects={projects} onResult={data => setResult(data as Ticket)} onLoading={setLoading} />
+              // El formulario de desarrollo se autogestiona: crea el ticket y
+              // redirige a la bandeja, sin pantalla de espera intermedia.
+              <DevelopmentForm projects={projects} />
             ) : (
               <SubmitForm projects={projects} onResult={data => setResult(data as Ticket)} onLoading={setLoading} />
             )}
@@ -73,10 +71,8 @@ export default function HomeClient({ projects = [] }: { projects: string[] }) {
         <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem', color: 'var(--text-secondary)' }}>
           <div className="spinner" style={{ width: '48px', height: '48px', color: 'var(--primary)', borderWidth: '3px' }} />
           <div>
-            <p style={{ fontWeight: 500, fontSize: '1.2rem', color: 'var(--text-primary)' }}>
-              {COPY[mode ?? 'incidencia'].loading}
-            </p>
-            <p style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>{COPY[mode ?? 'incidencia'].loadingHint}</p>
+            <p style={{ fontWeight: 500, fontSize: '1.2rem', color: 'var(--text-primary)' }}>Analizando solicitud...</p>
+            <p style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>Clasificando categoría y prioridad.</p>
           </div>
         </div>
       )}
@@ -90,11 +86,7 @@ export default function HomeClient({ projects = [] }: { projects: string[] }) {
             Ticket Registrado
           </h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem', marginBottom: '3rem', fontWeight: 400 }}>
-            {result.type === 'desarrollo' ? (
-              <>Tu solicitud de desarrollo es el ticket <strong>#{result.id}</strong>. Nuestro equipo la revisará y se pondrá en contacto contigo.</>
-            ) : (
-              <>Tu solicitud ha sido procesada y se le ha asignado el número <strong>{result.id}</strong>.</>
-            )}
+            Tu solicitud ha sido procesada y se le ha asignado el número <strong>{result.id}</strong>.
           </p>
 
           <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>

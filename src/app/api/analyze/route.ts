@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { analyzeRequest, analyzeDevelopmentRequest, analysisFromDevelopmentSpec } from '@/lib/ai';
+import { analyzeRequest } from '@/lib/ai';
 import { createTicket, getUserByUsername } from '@/lib/db';
+import { pendingDevAnalysis, runDevAnalysisInBackground } from '@/lib/dev-analysis';
 import { getProjectStack } from '@/lib/project-context';
 import type { DevelopmentBrief, TicketType } from '@/lib/types';
 import { auth } from '@/auth';
@@ -70,15 +71,20 @@ export const POST = auth(async function POST(req) {
     // Dos vías de análisis distintas según lo que eligió el usuario tras el login.
     if (type === 'desarrollo') {
       const projectName = project || 'General';
-      const spec = await analyzeDevelopmentRequest(text.trim(), buildBrief(brief, projectName));
+      // El PRD/TRD tarda; no bloqueamos al cliente. Creamos el ticket ya, con
+      // análisis provisional, y lo completamos en segundo plano. El cliente es
+      // redirigido a su lista de tickets de inmediato.
       const ticket = await createTicket(
         dbUser.id,
         projectName,
         text.trim(),
-        analysisFromDevelopmentSpec(spec),
-        { type: 'desarrollo', spec }
+        pendingDevAnalysis(),
+        { type: 'desarrollo', spec: null }
       );
-      return NextResponse.json(ticket, { status: 201 });
+
+      void runDevAnalysisInBackground(ticket.id, text.trim(), buildBrief(brief, projectName));
+
+      return NextResponse.json(ticket, { status: 202 });
     }
 
     const analysis = await analyzeRequest(text.trim());

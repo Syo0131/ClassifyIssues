@@ -1,12 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import CustomSelect from './CustomSelect';
 
 interface DevelopmentFormProps {
   projects?: string[];
-  onResult: (data: unknown) => void;
-  onLoading: (loading: boolean) => void;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -31,11 +30,15 @@ const labelStyle: React.CSSProperties = {
 
 /**
  * Formulario de la vía "desarrollo". Además de la descripción libre recoge el
- * brief (objetivo, usuarios, plazo, restricciones) que se envía como contexto
- * extra al prompt de PM/PO/Ingeniero. Todos los campos del brief son opcionales:
- * lo que falte acaba en los supuestos y preguntas abiertas del PRD.
+ * brief (objetivo, usuarios, plazo) que se envía como contexto al prompt de
+ * PM/PO/Ingeniero. Todos los campos del brief son opcionales.
+ *
+ * El análisis del PRD/TRD ocurre en segundo plano: al enviar, el ticket se crea
+ * al instante y redirigimos al cliente a su lista de tickets, sin hacerle
+ * esperar ni mostrarle el detalle del procesamiento interno.
  */
-export default function DevelopmentForm({ projects = [], onResult, onLoading }: DevelopmentFormProps) {
+export default function DevelopmentForm({ projects = [] }: DevelopmentFormProps) {
+  const router = useRouter();
   const [text, setText] = useState('');
   const [objective, setObjective] = useState('');
   const [users, setUsers] = useState('');
@@ -54,7 +57,6 @@ export default function DevelopmentForm({ projects = [], onResult, onLoading }: 
     }
 
     setLoading(true);
-    onLoading(true);
     setError('');
 
     try {
@@ -72,17 +74,17 @@ export default function DevelopmentForm({ projects = [], onResult, onLoading }: 
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'No se pudo analizar la solicitud');
+        throw new Error(errData.error || 'No se pudo registrar la solicitud');
       }
 
-      onResult(await res.json());
-      setText('');
+      // Ticket creado; el análisis sigue en segundo plano. A la bandeja.
+      router.push('/dashboard');
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ocurrió un error inesperado');
-    } finally {
       setLoading(false);
-      onLoading(false);
     }
+    // En el camino feliz no reactivamos el botón: la navegación desmonta el form.
   };
 
   return (
@@ -156,7 +158,7 @@ export default function DevelopmentForm({ projects = [], onResult, onLoading }: 
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
         <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, maxWidth: '380px' }}>
-          Generaremos un PRD, un TRD y una estimación con presupuesto orientativo. Los campos opcionales mejoran la precisión.
+          Registraremos tu solicitud y nuestro equipo la evaluará. Los campos opcionales nos ayudan a entenderla mejor.
         </p>
         <button
           type="submit"
@@ -174,7 +176,7 @@ export default function DevelopmentForm({ projects = [], onResult, onLoading }: 
             transition: 'background 0.2s',
           }}
         >
-          {loading ? 'Analizando...' : 'Generar PRD y presupuesto ✧'}
+          {loading ? 'Enviando...' : 'Enviar solicitud ✧'}
         </button>
       </div>
     </form>
