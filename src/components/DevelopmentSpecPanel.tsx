@@ -16,9 +16,9 @@ const COMPLEXITY_LABEL: Record<DevelopmentSpec['complexity'], string> = {
   high: 'Alta',
 };
 
-type TabId = 'prd' | 'trd' | 'budget';
+type TabId = 'prd' | 'trd' | 'budget' | 'chat';
 
-const TABS: { id: TabId; label: string }[] = [
+const BASE_TABS: { id: TabId; label: string }[] = [
   { id: 'prd', label: 'PRD · Producto' },
   { id: 'trd', label: 'TRD · Técnico' },
   { id: 'budget', label: 'Estimación' },
@@ -67,6 +67,8 @@ export default function DevelopmentSpecPanel({
   budget: Budget | null;
 }) {
   const [tab, setTab] = useState<TabId>('prd');
+  const hasConversation = !!spec.conversation && spec.conversation.length > 1;
+  const tabs = hasConversation ? [...BASE_TABS, { id: 'chat' as TabId, label: 'Conversación' }] : BASE_TABS;
 
   return (
     <div style={{ border: '1px solid var(--border-subtle)', borderRadius: '12px', overflow: 'hidden', background: 'var(--bg-card)' }}>
@@ -75,7 +77,6 @@ export default function DevelopmentSpecPanel({
           <h3 style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>{spec.title}</h3>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.25rem 0 0' }}>
             Complejidad {COMPLEXITY_LABEL[spec.complexity]}
-            {spec.source === 'mock' && ' · borrador local sin IA, requiere revisión'}
           </p>
         </div>
         <a
@@ -87,8 +88,29 @@ export default function DevelopmentSpecPanel({
         </a>
       </div>
 
+      {spec.warnings?.length > 0 && (
+        <div
+          style={{
+            margin: '1rem 1.5rem 0',
+            padding: '0.85rem 1rem',
+            borderRadius: '10px',
+            border: '1px solid rgba(245, 158, 11, 0.35)',
+            background: 'rgba(245, 158, 11, 0.08)',
+          }}
+        >
+          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--warning)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.5rem' }}>
+            ⚠ Requiere revisión
+          </div>
+          <ul style={{ margin: 0, paddingLeft: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.85rem', lineHeight: 1.5, color: 'var(--text-secondary)' }}>
+            {spec.warnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: '0.25rem', padding: '0 1.5rem', borderBottom: '1px solid var(--border-subtle)' }}>
-        {TABS.map(item => (
+        {tabs.map(item => (
           <button
             key={item.id}
             type="button"
@@ -264,6 +286,27 @@ export default function DevelopmentSpecPanel({
               Estimación orientativa y no vinculante, generada a partir del análisis automático de la solicitud.
               Se confirmará tras el refinamiento de requisitos con el cliente.
             </p>
+          </>
+        )}
+
+        {tab === 'chat' && hasConversation && (
+          <>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0 0 1rem', lineHeight: 1.5 }}>
+              Preguntas que la IA hizo al cliente y sus respuestas. El documento se redactó a partir de esta conversación.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              {spec.conversation!.map((m, i) => {
+                const isClient = m.role === 'user';
+                return (
+                  <div key={i}>
+                    <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: isClient ? 'var(--text-muted)' : 'var(--primary)', marginBottom: '0.2rem' }}>
+                      {isClient ? (i === 0 ? 'Cliente · petición inicial' : 'Cliente') : 'Asistente IA'}
+                    </div>
+                    <p style={{ fontSize: '0.9rem', lineHeight: 1.5, color: 'var(--text-primary)', margin: 0, whiteSpace: 'pre-wrap' }}>{m.content}</p>
+                  </div>
+                );
+              })}
+            </div>
           </>
         )}
       </div>

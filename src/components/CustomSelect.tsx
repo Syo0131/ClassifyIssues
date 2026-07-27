@@ -36,7 +36,7 @@ export default function CustomSelect({ value, onChange, options, integratedMenu 
   }, []);
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', minWidth: '150px' }}>
+    <div ref={containerRef} className="custom-select" style={{ position: 'relative' }}>
       <button
         type="button"
         className="filter-select"

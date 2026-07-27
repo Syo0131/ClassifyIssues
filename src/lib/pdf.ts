@@ -390,6 +390,19 @@ export async function buildDevelopmentPdf(ticket: Ticket, spec: DevelopmentSpec)
 
   drawCoverHeader(doc, ticket, spec);
 
+  // ── Avisos para revisión (si los hay) ──
+  // El PDF es staff-only, así que es el sitio correcto para listar lo que el
+  // análisis automático dejó pendiente o poco fiable. "⚠" no es WinAnsi.
+  if (spec.warnings?.length > 0) {
+    drawHeading(doc, 'Avisos para revision', 1);
+    drawParagraph(
+      doc,
+      'Este documento es un borrador generado automaticamente. Antes de compartirlo con el cliente, revisa los siguientes puntos:',
+      { size: 9.5, color: COLOR_MUTED }
+    );
+    drawBullets(doc, spec.warnings);
+  }
+
   // ── 1. PRD ──
   drawHeading(doc, '1. Product Requirements Document (PRD)', 1);
 
@@ -468,6 +481,20 @@ export async function buildDevelopmentPdf(ticket: Ticket, spec: DevelopmentSpec)
   // ── Anexo ──
   drawHeading(doc, 'Anexo: solicitud original del cliente', 1);
   drawParagraph(doc, ticket.raw_text, { size: 9, color: COLOR_MUTED });
+
+  // Conversación de refinamiento (si la hubo): contexto de por qué el documento
+  // dice lo que dice. Sólo si aportó algo más que la petición inicial.
+  if (spec.conversation && spec.conversation.length > 1) {
+    drawHeading(doc, 'Anexo: conversacion de refinamiento', 1);
+    for (const m of spec.conversation) {
+      const label = m.role === 'assistant' ? 'Asistente IA:' : 'Cliente:';
+      drawParagraph(doc, `${label} ${m.content}`, {
+        size: 9,
+        color: m.role === 'assistant' ? COLOR_ACCENT : COLOR_TEXT,
+        gap: 6,
+      });
+    }
+  }
 
   drawFooters(pdf, regular, `Ticket #${ticket.id} - ${ticket.project || 'General'}`);
 

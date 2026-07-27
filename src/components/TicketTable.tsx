@@ -1,16 +1,49 @@
 'use client';
 
 import { Ticket } from '@/lib/types';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 interface TicketTableProps {
   tickets: Ticket[];
 }
 
+const PRIORITY_LABEL: Record<Ticket['priority'], string> = {
+  critical: 'Crítica',
+  high: 'Alta',
+  medium: 'Media',
+  low: 'Baja',
+};
+
+const STATUS_LABEL: Record<Ticket['status'], string> = {
+  open: 'Abierto',
+  waiting_on_client: 'Esperando Cliente',
+  closed: 'Finalizado',
+};
+
+function TypeBadge({ ticket }: { ticket: Ticket }) {
+  const isDev = ticket.type === 'desarrollo';
+  return (
+    <span
+      className="badge"
+      style={{
+        whiteSpace: 'nowrap',
+        background: 'transparent',
+        border: `1px solid ${isDev ? 'var(--primary)' : 'var(--border-subtle)'}`,
+        color: isDev ? 'var(--primary)' : 'var(--text-muted)',
+      }}
+    >
+      {isDev ? '🧩 Desarrollo' : '🛟 Incidencia'}
+    </span>
+  );
+}
+
 export default function TicketTable({ tickets }: TicketTableProps) {
+  const router = useRouter();
+
   if (tickets.length === 0) {
     return (
-      <div className="card" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+      <div className="card" style={{ padding: '4rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
         <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>📭</div>
         <p>No se encontraron tickets en esta sección.</p>
       </div>
@@ -19,77 +52,88 @@ export default function TicketTable({ tickets }: TicketTableProps) {
 
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-      <div className="table-wrapper">
-        <table className="table">
+      {/* ── Tabla (escritorio) ── */}
+      <div className="tickets-table-wrap">
+        <table className="table tickets-table">
           <thead>
             <tr>
               <th>Número</th>
               <th>Tipo</th>
               <th>Solicitud</th>
-              <th style={{ minWidth: '150px' }}>Solicitante</th>
+              <th>Solicitante</th>
               <th>Proyecto</th>
               <th>Prioridad</th>
               <th>Estado</th>
               <th>Fecha</th>
-              <th>Acción</th>
             </tr>
           </thead>
           <tbody>
             {tickets.map((ticket) => (
-              <tr key={ticket.id}>
-                <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{ticket.id}</td>
-                <td>
-                  <span
-                    className="badge"
-                    style={{
-                      whiteSpace: 'nowrap',
-                      background: 'transparent',
-                      border: `1px solid ${ticket.type === 'desarrollo' ? 'var(--primary)' : 'var(--border-subtle)'}`,
-                      color: ticket.type === 'desarrollo' ? 'var(--primary)' : 'var(--text-muted)',
-                    }}
-                  >
-                    {ticket.type === 'desarrollo' ? '🧩 Desarrollo' : '🛟 Incidencia'}
-                  </span>
+              <tr
+                key={ticket.id}
+                onClick={() => router.push(`/tickets/${ticket.id}`)}
+                style={{ cursor: 'pointer' }}
+              >
+                <td style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                  {/* Enlace real para accesibilidad y abrir en pestaña nueva */}
+                  <Link href={`/tickets/${ticket.id}`} onClick={(e) => e.stopPropagation()}>
+                    {ticket.id}
+                  </Link>
                 </td>
+                <td><TypeBadge ticket={ticket} /></td>
                 <td>
-                  <div style={{ maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={ticket.raw_text}>
+                  <div style={{ maxWidth: '260px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={ticket.raw_text}>
                     {ticket.raw_text}
                   </div>
                 </td>
                 <td>
                   <div
-                    style={{ maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    style={{ maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                     title={ticket.username || `User #${ticket.user_id}`}
                   >
                     {ticket.username || `User #${ticket.user_id}`}
                   </div>
                 </td>
-                
                 <td style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
                   {ticket.project || 'General'}
                 </td>
                 <td>
-                  <span className={`badge badge-priority ${ticket.priority}`}>
-                    {ticket.priority === 'critical' ? 'Crítica' : ticket.priority === 'high' ? 'Alta' : ticket.priority === 'medium' ? 'Media' : 'Baja'}
-                  </span>
+                  <span className={`badge badge-priority ${ticket.priority}`}>{PRIORITY_LABEL[ticket.priority]}</span>
                 </td>
                 <td>
-                  <span className={`badge status-${ticket.status}`}>
-                    {ticket.status === 'open' ? 'Abierto' : ticket.status === 'waiting_on_client' ? 'Esperando Cliente' : 'Finalizado'}
-                  </span>
+                  <span className={`badge status-${ticket.status}`}>{STATUS_LABEL[ticket.status]}</span>
                 </td>
-                <td style={{ fontSize: '0.8rem' }}>
+                <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
                   {new Date(ticket.created_at).toLocaleDateString()}
-                </td>
-                <td>
-                  <Link href={`/tickets/${ticket.id}`} style={{ fontWeight: 600, color: 'var(--primary)', fontSize: '0.85rem' }}>
-                    Ver Detalle
-                  </Link>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* ── Tarjetas (móvil / tablet) ── */}
+      <div className="tickets-cards">
+        {tickets.map((ticket) => (
+          <Link key={ticket.id} href={`/tickets/${ticket.id}`} className="ticket-card">
+            <div className="ticket-card__top">
+              <span className="ticket-card__id">#{ticket.id}</span>
+              <TypeBadge ticket={ticket} />
+            </div>
+            <p className="ticket-card__text">{ticket.raw_text}</p>
+            <div className="ticket-card__badges">
+              <span className={`badge badge-priority ${ticket.priority}`}>{PRIORITY_LABEL[ticket.priority]}</span>
+              <span className={`badge status-${ticket.status}`}>{STATUS_LABEL[ticket.status]}</span>
+            </div>
+            <div className="ticket-card__meta">
+              <span>{ticket.username || `User #${ticket.user_id}`}</span>
+              <span aria-hidden="true">·</span>
+              <span>{ticket.project || 'General'}</span>
+              <span aria-hidden="true">·</span>
+              <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
+            </div>
+          </Link>
+        ))}
       </div>
     </div>
   );

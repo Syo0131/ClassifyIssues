@@ -6,32 +6,20 @@ import { usePathname } from 'next/navigation';
 export default function NavLinks({ role }: { role: 'user' | 'technician' | 'admin' | null }) {
   const pathname = usePathname();
 
-  const getLinkStyle = (path: string) => {
-    const isActive = pathname === path;
-    return {
-      display: 'flex',
-      alignItems: 'center',
-      padding: '0 1rem',
-      height: '100%',
-      fontSize: '0.9rem',
-      fontWeight: 500,
-      color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
-      borderBottom: isActive ? '2px solid var(--primary)' : '2px solid transparent',
-      transition: 'color 0.2s',
-      textDecoration: 'none'
-    };
-  };
+  // El estilo (color, subrayado activo, tamaños móviles) vive en globals.css
+  // bajo `.app-nav-links`; aquí sólo marcamos el enlace activo.
+  const current = (path: string) => (pathname === path ? 'page' : undefined);
 
   return (
-    <div style={{ display: 'flex', gap: '1rem', height: '100%' }}>
-      <Link href="/" style={getLinkStyle('/')}>
+    <div className="app-nav-links">
+      <Link href="/" aria-current={current('/')}>
         Nuevo Ticket
       </Link>
-      <Link href="/dashboard" style={getLinkStyle('/dashboard')}>
+      <Link href="/dashboard" aria-current={current('/dashboard')}>
         Tickets
       </Link>
       {role === 'admin' && (
-        <Link href="/admin/users" style={getLinkStyle('/admin/users')}>
+        <Link href="/admin/users" aria-current={current('/admin/users')}>
           Usuarios
         </Link>
       )}

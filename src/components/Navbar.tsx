@@ -23,32 +23,18 @@ export default async function Navbar() {
   const role = session?.user ? (session.user as User).role : null;
 
   return (
-    <nav style={{
-      display: 'grid',
-      gridTemplateColumns: '1fr auto 1fr',
-      alignItems: 'center',
-      padding: '0 2.5rem',
-      height: '80px',
-      background: 'transparent',
-      borderBottom: '1px solid var(--border-subtle)',
-      position: 'sticky',
-      top: 0,
-      zIndex: 100,
-      backgroundColor: 'var(--bg-app)'
-    }}>
+    <nav className="app-navbar">
       <div>
-        <Link href="/" style={{ fontSize: '1.25rem', fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+        <Link href="/" className="app-navbar__brand">
           Support Core
         </Link>
       </div>
 
-      <div style={{ display: 'flex', height: '100%' }}>
-        {session?.user ? (
-          <NavLinks role={role} />
-        ) : null}
+      <div className="app-navbar__links">
+        {session?.user ? <NavLinks role={role} /> : null}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+      <div className="app-navbar__actions">
         {session?.user ? (
           <NavbarClient user={session.user} />
         ) : (

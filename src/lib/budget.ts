@@ -9,9 +9,14 @@ import { Budget, BudgetLine, DevelopmentSpec } from './types';
  * Por eso el presupuesto tampoco se persiste: se recalcula al mostrarlo.
  */
 
-const DEFAULT_HOURLY_RATE = 45;
-const DEFAULT_CURRENCY = 'EUR';
+const DEFAULT_HOURLY_RATE = 30;
+const DEFAULT_CURRENCY = 'USD';
 const DEFAULT_CONTINGENCY_PCT = 15;
+
+// Locale de formato de importes. es-DO: símbolo "US$" y coma como separador de
+// miles (US$10,712), la convención dominicana para dólares. Configurable por si
+// se factura a otro mercado.
+const MONEY_LOCALE = process.env.DEV_MONEY_LOCALE?.trim() || 'es-DO';
 
 function readNumberEnv(name: string, fallback: number, max: number): number {
   const raw = process.env[name];
@@ -79,16 +84,16 @@ export function calculateBudget(spec: DevelopmentSpec): Budget {
   };
 }
 
-/** Formato de importe para UI y PDF (es-ES, sin decimales). */
+/** Formato de importe para UI y PDF (locale dominicano, sin decimales). */
 export function formatMoney(amount: number, currency: string): string {
   try {
-    return new Intl.NumberFormat('es-ES', {
+    return new Intl.NumberFormat(MONEY_LOCALE, {
       style: 'currency',
       currency,
       maximumFractionDigits: 0,
     }).format(amount);
   } catch {
     // Divisa no reconocida por Intl (p. ej. un código inventado en .env).
-    return `${new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 }).format(amount)} ${currency}`;
+    return `${new Intl.NumberFormat(MONEY_LOCALE, { maximumFractionDigits: 0 }).format(amount)} ${currency}`;
   }
 }

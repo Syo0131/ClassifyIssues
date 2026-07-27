@@ -83,21 +83,44 @@ export interface DevelopmentSpec {
   complexity: 'low' | 'medium' | 'high';
   openQuestions: string[];
 
+  /**
+   * Avisos para el revisor humano, generados por nuestro código de validación
+   * (no por la IA): campos que la IA no aportó, respuesta truncada, estimaciones
+   * ensanchadas, falta de contexto de stack, etc. Este análisis es un borrador
+   * inicial que alguien del equipo valida; estos avisos le dicen qué mirar.
+   */
+  warnings: string[];
+
+  /**
+   * Conversación de refinamiento que originó el documento (petición inicial +
+   * preguntas de la IA + respuestas del cliente). Se guarda para que el staff
+   * vea por qué el documento dice lo que dice. Vacía si no hubo chat.
+   */
+  conversation?: ChatMessage[];
+
   source: 'gemini' | 'mock';
+}
+
+/** Un turno del chat de refinamiento previo a generar el documento. */
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 /** Contexto adicional que acompaña a una solicitud de desarrollo. */
 export interface DevelopmentBrief {
-  // Lo aporta el cliente en el formulario.
-  objective?: string;
-  users?: string;
-  deadline?: string;
   /**
    * NO lo aporta el cliente: lo inyecta el servidor desde `lib/project-context`.
    * Los clientes ya son activos, así que su stack lo conocemos nosotros y
    * preguntárselo no tendría sentido.
    */
   stack?: string;
+  /**
+   * Conversación de refinamiento: la petición inicial del cliente más las
+   * preguntas de la IA y sus respuestas. Enriquece el prompt de generación y se
+   * persiste en el spec para trazabilidad. `messages[0]` es la petición inicial.
+   */
+  conversation?: ChatMessage[];
 }
 
 export interface BudgetLine {

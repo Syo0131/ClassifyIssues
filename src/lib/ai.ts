@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import {
   AnalysisResult,
+  ChatMessage,
   DevModule,
   DevRequirement,
   DevelopmentBrief,
@@ -44,7 +45,16 @@ Reglas OBLIGATORIAS:
 - NUNCA devuelvas importes, precios ni divisas. Estima SOLO en horas de trabajo; el coste lo calcula otro sistema.
 - Estima con tres puntos por módulo: hoursMin (optimista), hoursLikely (probable), hoursMax (pesimista). Debe cumplirse hoursMin <= hoursLikely <= hoursMax.
 - Las horas deben incluir el trabajo real de ingeniería: análisis, implementación, pruebas y despliegue. Incluye siempre un módulo de QA/pruebas y otro de gestión/coordinación.
-- Entre 3 y 8 módulos. Entre 3 y 12 requisitos funcionales.
+- Los módulos, en conjunto, deben cubrir todos los requisitos funcionales "must". No dejes un "must" sin trabajo asignado.
+- Entre 3 y 10 módulos. Entre 3 y 12 requisitos funcionales.
+
+Guía de ESTIMACIÓN (órdenes de magnitud orientativos para trabajo de desarrollo real; ajústalos al contexto y al stack, NO son límites rígidos, sólo evitan estimaciones irreales):
+- Pantalla/CRUD sencillo: 8-20 h.  Formulario/flujo con validaciones: 12-30 h.
+- Autenticación, roles o permisos: 15-40 h.  Integración con API/pasarela externa: 25-60 h.
+- Migración o importación de datos: 20-50 h.  Informes/dashboard/analítica: 15-40 h.
+- QA/pruebas: típicamente 15-25% del total.  Gestión/coordinación: típicamente 8-15% del total.
+- La dispersión debe reflejar incertidumbre real: hoursMax suele ser >= 1.3x hoursMin, más ancho cuanto menos claro esté el módulo. NO devuelvas hoursMin = hoursLikely = hoursMax salvo tareas triviales y muy conocidas.
+- "complexity" según el TOTAL de hoursLikely: "low" si < 40 h, "medium" si 40-120 h, "high" si > 120 h.
 
 Campos del JSON:
 - "title": Título corto del proyecto.
@@ -68,6 +78,22 @@ Campos del JSON:
 
 Responde SOLO con JSON válido en ESPAÑOL.`;
 
+const DEV_CHAT_MAX_QUESTIONS = 5;
+
+const DEV_CHAT_SYSTEM_PROMPT = `Eres un analista de requisitos que refina, mediante una breve conversación, la petición de desarrollo de un cliente (normalmente NO técnico) antes de redactar la documentación.
+
+Tu objetivo: con MUY pocas preguntas, sacar lo esencial que la petición no deja claro para poder escribir un buen PRD/TRD.
+
+Reglas:
+- Haz UNA sola pregunta por turno, concreta, corta y en lenguaje sencillo (sin jerga técnica).
+- Pregunta SOLO sobre negocio, objetivo, usuarios, alcance, prioridades, plazos, presupuesto o criterios de éxito. NUNCA preguntes por tecnología, stack, infraestructura ni lenguajes: eso ya lo sabemos nosotros.
+- No repitas algo que el cliente ya haya respondido. Si el cliente dice que no sabe o no aplica, sigue adelante.
+- Máximo ${DEV_CHAT_MAX_QUESTIONS} preguntas en total. En cuanto tengas lo suficiente para redactar un documento razonable, DEJA de preguntar.
+- Cuando ya no necesites preguntar más, responde con { "done": true, "question": null }.
+- Si necesitas una pregunta más, responde con { "done": false, "question": "..." }.
+
+Responde SOLO con JSON válido en ESPAÑOL con la forma { "done": boolean, "question": string|null }.`;
+
 declare global {
   // eslint-disable-next-line no-var
   var __geminiModels: Map<string, import('@google/generative-ai').GenerativeModel> | undefined;
@@ -81,7 +107,19 @@ declare global {
  * tokens, así que no pueden compartir instancia. La caché entera se descarta si
  * cambia la API key o el nombre del modelo.
  */
-function getGeminiModelCached(profile: 'incident' | 'development') {
+type ModelProfile = 'incident' | 'development' | 'chat';
+
+const MODEL_PROFILES: Record<ModelProfile, { temperature: number; maxOutputTokens: number }> = {
+  incident: { temperature: 0.3, maxOutputTokens: 1000 },
+  // Un PRD/TRD completo es largo; con 8000 se truncaba a veces (JSON cortado ->
+  // parse falla -> caía al mock). gemini-flash soporta salida grande.
+  development: { temperature: 0.4, maxOutputTokens: 16000 },
+  // El chat devuelve una pregunta corta, pero gemini-flash gasta tokens en
+  // "thinking" interno que cuentan contra este límite; 500 truncaba el JSON.
+  chat: { temperature: 0.5, maxOutputTokens: 2000 },
+};
+
+function getGeminiModelCached(profile: ModelProfile) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey === 'mock' || apiKey === '') {
     throw new Error('Gemini not configured');
@@ -98,14 +136,17 @@ function getGeminiModelCached(profile: 'incident' | 'development') {
   const cached = global.__geminiModels.get(profile);
   if (cached) return cached;
 
+  const systemInstruction =
+    profile === 'development' ? DEV_SYSTEM_PROMPT : profile === 'chat' ? DEV_CHAT_SYSTEM_PROMPT : SYSTEM_PROMPT;
+  const cfg = MODEL_PROFILES[profile];
+
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
     model: modelName,
-    systemInstruction: profile === 'development' ? DEV_SYSTEM_PROMPT : SYSTEM_PROMPT,
+    systemInstruction,
     generationConfig: {
-      temperature: profile === 'development' ? 0.4 : 0.3,
-      // Un PRD/TRD completo no cabe en el presupuesto del triage.
-      maxOutputTokens: profile === 'development' ? 8000 : 1000,
+      temperature: cfg.temperature,
+      maxOutputTokens: cfg.maxOutputTokens,
       responseMimeType: 'application/json',
     },
   });
@@ -326,22 +367,72 @@ function mockAnalyze(text: string): AnalysisResult {
 // un PRD + TRD + estimación en horas. Igual que el triage de incidencias,
 // NUNCA lanza: cae a un borrador mock si Gemini no está configurado o falla.
 
+/** Formatea la conversación de refinamiento como texto para el prompt. */
+function formatConversation(conversation?: ChatMessage[]): string {
+  if (!conversation || conversation.length === 0) return '';
+  return conversation
+    .map(m => (m.role === 'assistant' ? `PREGUNTA DEL ANALISTA: ${m.content}` : `CLIENTE: ${m.content}`))
+    .join('\n');
+}
+
 /**
- * Combina el texto libre del cliente con el contexto del formulario y el stack
- * que aporta el servidor. El stack va al final y etiquetado como dato nuestro,
- * no como algo que haya dicho el cliente.
+ * Combina la petición del cliente (que ahora llega como conversación de
+ * refinamiento) con el stack que aporta el servidor. El stack va etiquetado
+ * como dato nuestro, no como algo que el cliente haya dicho.
  */
 function buildDevPrompt(text: string, brief?: DevelopmentBrief): string {
-  const parts = [`PETICIÓN DEL CLIENTE:\n${text}`];
-  if (brief?.objective?.trim()) parts.push(`OBJETIVO DE NEGOCIO:\n${brief.objective.trim()}`);
-  if (brief?.users?.trim()) parts.push(`USUARIOS DESTINATARIOS:\n${brief.users.trim()}`);
-  if (brief?.deadline?.trim()) parts.push(`PLAZO DESEADO:\n${brief.deadline.trim()}`);
+  const parts: string[] = [];
+  const convo = formatConversation(brief?.conversation);
+  if (convo) {
+    parts.push(`CONVERSACIÓN DE REFINAMIENTO CON EL CLIENTE (la primera intervención es su petición original):\n${convo}`);
+  } else {
+    parts.push(`PETICIÓN DEL CLIENTE:\n${text}`);
+  }
   if (brief?.stack?.trim()) {
     parts.push(
       `STACK ACTUAL DEL CLIENTE (dato interno verificado, el cliente no lo ha aportado):\n${brief.stack.trim()}`
     );
   }
   return parts.join('\n\n');
+}
+
+/**
+ * Un turno del chat de refinamiento: dada la conversación hasta ahora, decide si
+ * hacer otra pregunta o si ya hay suficiente. NUNCA lanza: si Gemini no está
+ * configurado o falla, devuelve `done: true` para que el flujo siga sin chat.
+ * El tope de preguntas se aplica también aquí, no sólo en el prompt.
+ */
+export async function nextDevChatQuestion(
+  conversation: ChatMessage[]
+): Promise<{ done: boolean; question: string | null }> {
+  const askedSoFar = conversation.filter(m => m.role === 'assistant').length;
+  if (askedSoFar >= DEV_CHAT_MAX_QUESTIONS) {
+    return { done: true, question: null };
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === 'mock' || apiKey === '') {
+    return { done: true, question: null };
+  }
+
+  try {
+    const model = getGeminiModelCached('chat');
+    const contents = conversation.map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+    const result = await withRetry(() => model.generateContent({ contents }));
+    const content = result.response.text();
+    if (!content) return { done: true, question: null };
+
+    const parsed = JSON.parse(content) as { done?: boolean; question?: string | null };
+    const question = typeof parsed.question === 'string' ? parsed.question.trim() : '';
+    if (parsed.done || !question) return { done: true, question: null };
+    return { done: false, question };
+  } catch (error) {
+    console.error('Dev chat question error, terminando el chat:', error);
+    return { done: true, question: null };
+  }
 }
 
 export async function analyzeDevelopmentRequest(
@@ -357,12 +448,56 @@ export async function analyzeDevelopmentRequest(
   try {
     const model = getGeminiModelCached('development');
     const result = await withRetry(() => model.generateContent(buildDevPrompt(text, brief)));
-    const content = result.response.text();
+    const response = result.response;
+    const finishReason = response.candidates?.[0]?.finishReason;
 
-    if (!content) throw new Error('Empty response from Gemini');
+    // Avisos que no dependen del contenido: el stack ausente ya se sabe aquí.
+    const extraWarnings: string[] = [];
+    if (!brief?.stack) {
+      extraWarnings.push('Sin contexto de stack para este proyecto: revisa la arquitectura propuesta y las horas de integración.');
+    }
 
-    const parsed = JSON.parse(content) as Partial<DevelopmentSpec>;
-    return { ...validateDevelopmentSpec(parsed, text), source: 'gemini' };
+    let content = '';
+    try {
+      content = response.text();
+    } catch {
+      content = '';
+    }
+
+    if (!content) {
+      console.error(`Gemini dev analysis: respuesta vacía (finishReason=${finishReason}).`);
+      return mockDevelopmentSpec(text, brief, [
+        'La IA no devolvió contenido; este borrador se generó por reglas y requiere rehacer el análisis.',
+      ]);
+    }
+
+    // finishReason !== 'STOP' (normalmente 'MAX_TOKENS') = respuesta cortada.
+    // Con application/json el corte deja el JSON incompleto y el parse falla; si
+    // aun así parsea, conservamos lo que haya y avisamos.
+    if (finishReason && finishReason !== 'STOP') {
+      extraWarnings.push('La respuesta de la IA se truncó (límite de longitud); el análisis puede estar incompleto. Revísalo con especial cuidado.');
+    }
+
+    let parsed: Partial<DevelopmentSpec>;
+    try {
+      parsed = JSON.parse(content) as Partial<DevelopmentSpec>;
+    } catch {
+      // Distinguimos "truncado/ilegible" de "sin API key": logueamos el crudo
+      // para diagnóstico y devolvemos un borrador de reglas marcado como tal.
+      console.error(
+        `Gemini dev analysis: JSON inválido (finishReason=${finishReason}). Recorte crudo (500 chars):`,
+        content.slice(0, 500)
+      );
+      return mockDevelopmentSpec(text, brief, [
+        'La IA devolvió una respuesta ilegible o truncada; este borrador se generó por reglas y requiere rehacer el análisis.',
+      ]);
+    }
+
+    return {
+      ...validateDevelopmentSpec(parsed, text, extraWarnings),
+      conversation: brief?.conversation,
+      source: 'gemini',
+    };
   } catch (error) {
     console.error('Gemini development analysis error, falling back to mock:', error);
     return mockDevelopmentSpec(text, brief);
@@ -407,26 +542,31 @@ function clampHours(value: unknown, fallback: number): number {
 }
 
 /**
- * Normaliza los módulos y, sobre todo, fuerza la coherencia de la estimación de
- * tres puntos (min <= likely <= max) — el modelo la rompe con frecuencia y el
- * presupuesto quedaría con rangos invertidos.
+ * Normaliza los módulos y fuerza la coherencia de la estimación de tres puntos
+ * (min <= likely <= max) — el modelo la rompe con frecuencia. Además ensancha
+ * las estimaciones degeneradas (min = likely = max), que dan falsa precisión al
+ * presupuesto, y lo anota en `warnings` para el revisor.
  */
-function normalizeModules(value: unknown): DevModule[] {
+function normalizeModules(value: unknown, warnings: string[]): DevModule[] {
   if (!Array.isArray(value)) return [];
   return value
     .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
-    .slice(0, 15)
+    .slice(0, 12)
     .map((item, index) => {
       const likely = clampHours(item.hoursLikely, 8);
-      const min = Math.min(clampHours(item.hoursMin, Math.max(1, Math.round(likely * 0.7))), likely);
-      const max = Math.max(clampHours(item.hoursMax, Math.round(likely * 1.5)), likely);
-      return {
-        name: toText(item.name, `Módulo ${index + 1}`),
-        description: toText(item.description, ''),
-        hoursMin: min,
-        hoursLikely: likely,
-        hoursMax: max,
-      };
+      let min = Math.min(clampHours(item.hoursMin, Math.max(1, Math.round(likely * 0.7))), likely);
+      let max = Math.max(clampHours(item.hoursMax, Math.round(likely * 1.5)), likely);
+      const name = toText(item.name, `Módulo ${index + 1}`);
+
+      // min === max sólo ocurre si el modelo dio los tres valores iguales: no es
+      // un rango real. Lo ensanchamos a una banda orientativa y avisamos.
+      if (min === max) {
+        min = Math.max(1, Math.round(likely * 0.75));
+        max = Math.max(min + 1, Math.round(likely * 1.5));
+        warnings.push(`Estimación del módulo "${name}" sin rango real (min=max); se ensanchó a una banda orientativa, revísala.`);
+      }
+
+      return { name, description: toText(item.description, ''), hoursMin: min, hoursLikely: likely, hoursMax: max };
     });
 }
 
@@ -439,13 +579,41 @@ function fallbackModules(): DevModule[] {
   ];
 }
 
+// Campos array cuya ausencia merece un aviso al revisor (los más importantes de
+// un PRD/TRD). Se comprueban sobre la salida cruda del modelo.
+const REVIEWABLE_ARRAY_FIELDS: { key: keyof DevelopmentSpec; label: string }[] = [
+  { key: 'successMetrics', label: 'métricas de éxito' },
+  { key: 'assumptions', label: 'supuestos' },
+  { key: 'risks', label: 'riesgos' },
+  { key: 'components', label: 'componentes técnicos' },
+  { key: 'dataModel', label: 'modelo de datos' },
+  { key: 'integrations', label: 'integraciones' },
+  { key: 'nonFunctional', label: 'requisitos no funcionales' },
+];
+
 function validateDevelopmentSpec(
   spec: Partial<DevelopmentSpec>,
-  originalText: string
+  originalText: string,
+  extraWarnings: string[] = []
 ): Omit<DevelopmentSpec, 'source'> {
   const validComplexity = ['low', 'medium', 'high'] as const;
-  const modules = normalizeModules(spec.modules);
+  const warnings = [...extraWarnings];
+  const modules = normalizeModules(spec.modules, warnings);
   const requirements = normalizeRequirements(spec.functionalRequirements);
+
+  // C1: en vez de vaciar en silencio, señalamos lo que la IA no aportó para que
+  // el revisor sepa qué completar.
+  for (const { key, label } of REVIEWABLE_ARRAY_FIELDS) {
+    if (toStringArray(spec[key]).length === 0) {
+      warnings.push(`La IA no aportó ${label}; complétalo en la revisión.`);
+    }
+  }
+  if (requirements.length === 0) {
+    warnings.push('La IA no derivó requisitos funcionales; la solicitud puede ser demasiado vaga.');
+  }
+  if (modules.length === 0) {
+    warnings.push('La IA no aportó desglose de módulos; la estimación usa un desglose por defecto, revísala.');
+  }
 
   return {
     title: toText(spec.title, originalText.trim().slice(0, 60) || 'Nuevo desarrollo'),
@@ -478,6 +646,7 @@ function validateDevelopmentSpec(
       ? (spec.complexity as 'low' | 'medium' | 'high')
       : 'medium',
     openQuestions: toStringArray(spec.openQuestions),
+    warnings,
   };
 }
 
@@ -491,19 +660,27 @@ const DEV_COMPLEXITY_KEYWORDS = [
   'analítica', 'movil', 'móvil', 'app', 'api', 'sso', 'permisos', 'roles', 'ia',
 ];
 
-function mockDevelopmentSpec(text: string, brief?: DevelopmentBrief): DevelopmentSpec {
-  const lower = `${text} ${brief?.objective ?? ''} ${brief?.stack ?? ''}`.toLowerCase();
+function mockDevelopmentSpec(
+  text: string,
+  brief?: DevelopmentBrief,
+  extraWarnings: string[] = []
+): DevelopmentSpec {
+  // El texto útil incluye lo que el cliente respondió en el chat de refinamiento.
+  const clientText = [text, ...(brief?.conversation ?? []).filter(m => m.role === 'user').map(m => m.content)]
+    .join('\n')
+    .trim();
+  const lower = `${clientText} ${brief?.stack ?? ''}`.toLowerCase();
   const signals = DEV_COMPLEXITY_KEYWORDS.filter(kw => lower.includes(kw)).length;
   const complexity: DevelopmentSpec['complexity'] = signals >= 4 ? 'high' : signals >= 2 ? 'medium' : 'low';
   const factor = complexity === 'high' ? 2 : complexity === 'medium' ? 1.4 : 1;
 
-  const sentences = text
+  const sentences = clientText
     .split(/[.!?\n]+/)
     .map(s => s.trim())
     .filter(s => s.length > 10)
     .slice(0, 6);
 
-  const requirements: DevRequirement[] = (sentences.length > 0 ? sentences : [text.trim()]).map(
+  const requirements: DevRequirement[] = (sentences.length > 0 ? sentences : [clientText]).map(
     (sentence, index) => ({
       id: `RF-${String(index + 1).padStart(2, '0')}`,
       title: sentence.slice(0, 70),
@@ -521,17 +698,14 @@ function mockDevelopmentSpec(text: string, brief?: DevelopmentBrief): Developmen
 
   return {
     title: text.trim().slice(0, 60) || 'Nuevo desarrollo',
-    problem: brief?.objective?.trim() || text.trim().slice(0, 300),
-    goal: brief?.objective?.trim() || 'Objetivo pendiente de validar con el cliente.',
-    targetUsers: brief?.users?.trim() ? [brief.users.trim()] : ['Pendiente de definir'],
+    problem: text.trim().slice(0, 300) || clientText.slice(0, 300),
+    goal: 'Objetivo pendiente de validar con el cliente.',
+    targetUsers: ['Pendiente de definir'],
     scope: requirements.map(r => r.title),
     outOfScope: ['Todo lo no recogido explícitamente en el alcance'],
     functionalRequirements: requirements,
     successMetrics: ['Pendiente de acordar con el cliente'],
-    assumptions: [
-      'Documento generado sin asistencia de IA (modo local): requiere revisión de un analista.',
-      brief?.deadline?.trim() ? `Plazo indicado por el cliente: ${brief.deadline.trim()}` : 'No se indicó plazo.',
-    ],
+    assumptions: ['Documento generado sin asistencia de IA (modo local): requiere revisión de un analista.'],
     risks: ['Alcance poco definido: la estimación puede variar tras el refinamiento.'],
     architecture: brief?.stack?.trim()
       ? `Se construye sobre el stack actual del cliente: ${brief.stack.trim()}`
@@ -546,6 +720,11 @@ function mockDevelopmentSpec(text: string, brief?: DevelopmentBrief): Developmen
       '¿Cuál es el criterio de aceptación para dar por cerrado el desarrollo?',
       '¿Existe alguna restricción de plazo o presupuesto?',
     ],
+    warnings: [
+      'Borrador local sin IA (por reglas): requiere una revisión completa antes de compartirlo.',
+      ...extraWarnings,
+    ],
+    conversation: brief?.conversation,
     source: 'mock',
   };
 }
@@ -559,9 +738,14 @@ export function analysisFromDevelopmentSpec(spec: DevelopmentSpec): AnalysisResu
   const priority: AnalysisResult['priority'] =
     spec.complexity === 'high' ? 'high' : spec.complexity === 'medium' ? 'medium' : 'low';
 
+  // Una respuesta truncada es menos fiable: lo reflejamos en la confianza del
+  // ticket clásico, no sólo en los avisos del panel.
+  const wasTruncated = spec.warnings.some(w => w.includes('truncó'));
+  const confidence = spec.source !== 'gemini' || wasTruncated ? 0.5 : 0.85;
+
   return {
     category: 'Producto e Ingeniería',
-    confidence: spec.source === 'gemini' ? 0.85 : 0.5,
+    confidence,
     issues: spec.functionalRequirements.slice(0, 5).map(r => `${r.id}: ${r.title}`),
     actions: spec.modules.slice(0, 5).map(m => m.name),
     summary: spec.goal.slice(0, 300),

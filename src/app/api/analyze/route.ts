@@ -3,39 +3,32 @@ import { analyzeRequest } from '@/lib/ai';
 import { createTicket, getUserByUsername } from '@/lib/db';
 import { pendingDevAnalysis, runDevAnalysisInBackground } from '@/lib/dev-analysis';
 import { getProjectStack } from '@/lib/project-context';
-import type { DevelopmentBrief, TicketType } from '@/lib/types';
+import type { ChatMessage, DevelopmentBrief, TicketType } from '@/lib/types';
 import { auth } from '@/auth';
 
 const MAX_TICKET_TEXT = 20_000;
-const MAX_BRIEF_FIELD = 2_000;
+const MAX_MSG_LEN = 4_000;
+const MAX_CONVERSATION_MSGS = 30;
 
-/**
- * Recorta y normaliza los campos del formulario de desarrollo.
- * Sólo se aceptan los tres que aporta el cliente: el stack lo pone el servidor
- * en `buildBrief`, de modo que nada de lo que llegue en el body pueda
- * suplantarlo.
- */
-function parseClientBrief(value: unknown): DevelopmentBrief {
-  if (!value || typeof value !== 'object') return {};
-  const raw = value as Record<string, unknown>;
-  const field = (key: string) =>
-    typeof raw[key] === 'string' ? (raw[key] as string).trim().slice(0, MAX_BRIEF_FIELD) : undefined;
-
-  return {
-    objective: field('objective'),
-    users: field('users'),
-    deadline: field('deadline'),
-  };
+/** Sanea la conversación de refinamiento que llega del cliente. */
+function parseConversation(value: unknown): ChatMessage[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((m): m is { role: unknown; content: unknown } => !!m && typeof m === 'object')
+    .slice(0, MAX_CONVERSATION_MSGS)
+    .map(m => ({
+      role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+      content: typeof m.content === 'string' ? m.content.trim().slice(0, MAX_MSG_LEN) : '',
+    }))
+    .filter(m => m.content.length > 0);
 }
 
-/** Añade al brief del cliente el stack que ya conocemos de su proyecto. */
-function buildBrief(value: unknown, project: string): DevelopmentBrief | undefined {
-  const brief: DevelopmentBrief = {
-    ...parseClientBrief(value),
+/** Brief server-side: el stack (que ya conocemos) + la conversación saneada. */
+function buildBrief(conversation: ChatMessage[], project: string): DevelopmentBrief {
+  return {
     stack: getProjectStack(project),
+    conversation: conversation.length > 0 ? conversation : undefined,
   };
-
-  return Object.values(brief).some(Boolean) ? brief : undefined;
 }
 
 export const POST = auth(async function POST(req) {
@@ -45,7 +38,7 @@ export const POST = auth(async function POST(req) {
 
   try {
     const body = await req.json();
-    const { text, project, brief } = body;
+    const { text, project } = body;
     const type: TicketType = body.type === 'desarrollo' ? 'desarrollo' : 'incidencia';
 
     if (!text || typeof text !== 'string' || text.trim().length < 10) {
@@ -71,6 +64,10 @@ export const POST = auth(async function POST(req) {
     // Dos vías de análisis distintas según lo que eligió el usuario tras el login.
     if (type === 'desarrollo') {
       const projectName = project || 'General';
+      // `text` es la petición inicial (queda como raw_text del ticket). La
+      // conversación de refinamiento, si la hubo, enriquece el análisis.
+      const conversation = parseConversation(body.conversation);
+
       // El PRD/TRD tarda; no bloqueamos al cliente. Creamos el ticket ya, con
       // análisis provisional, y lo completamos en segundo plano. El cliente es
       // redirigido a su lista de tickets de inmediato.
@@ -82,7 +79,7 @@ export const POST = auth(async function POST(req) {
         { type: 'desarrollo', spec: null }
       );
 
-      void runDevAnalysisInBackground(ticket.id, text.trim(), buildBrief(brief, projectName));
+      void runDevAnalysisInBackground(ticket.id, text.trim(), buildBrief(conversation, projectName));
 
       return NextResponse.json(ticket, { status: 202 });
     }
