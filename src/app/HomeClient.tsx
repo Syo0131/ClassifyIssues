@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { ArrowLeft, Check } from 'lucide-react';
 import SubmitForm from '@/components/SubmitForm';
 import DevelopmentForm from '@/components/DevelopmentForm';
 import ModeSelector from '@/components/ModeSelector';
@@ -41,9 +42,10 @@ export default function HomeClient({ projects = [] }: { projects: string[] }) {
           <button
             type="button"
             onClick={() => setMode(null)}
-            style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.85rem', padding: '0 0 1.5rem', fontFamily: 'inherit' }}
+            style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.85rem', padding: '0 0 1.5rem', fontFamily: 'inherit' }}
           >
-            ← Cambiar tipo de solicitud
+            <ArrowLeft size={15} strokeWidth={2} aria-hidden="true" />
+            Cambiar tipo de solicitud
           </button>
 
           <div style={{ textAlign: 'center', marginBottom: mode === 'desarrollo' ? '2.5rem' : '4rem' }}>
@@ -79,8 +81,8 @@ export default function HomeClient({ projects = [] }: { projects: string[] }) {
 
       {result && !loading && (
         <div style={{ textAlign: 'center', maxWidth: '620px', margin: '0 auto', animation: 'fadeIn 0.4s ease-out' }}>
-          <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--success)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', margin: '0 auto 2rem', boxShadow: '0 10px 25px rgba(16, 185, 129, 0.2)' }}>
-            ✓
+          <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--success)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 2rem', boxShadow: '0 10px 25px rgba(16, 185, 129, 0.2)' }}>
+            <Check size={40} strokeWidth={2.5} aria-hidden="true" />
           </div>
           <h2 style={{ fontSize: '2rem', fontWeight: 500, letterSpacing: '-0.02em', color: 'var(--text-primary)', marginBottom: '1rem' }}>
             Ticket Registrado

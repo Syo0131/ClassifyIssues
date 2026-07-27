@@ -1,6 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import {
+  Brain,
+  CircleCheck,
+  ClipboardList,
+  Clock,
+  LifeBuoy,
+  Puzzle,
+  RotateCcw,
+  Settings2,
+} from 'lucide-react';
 import { Budget, Ticket, Comment, TicketStatus } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 import { canManageTicketStatus, canViewAllTickets } from '@/lib/permissions';
@@ -111,6 +121,9 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
             <span
               className="badge"
               style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.3rem',
                 fontSize: '0.7rem',
                 padding: '0.25rem 0.6rem',
                 background: 'transparent',
@@ -118,7 +131,8 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
                 color: isDevelopment ? 'var(--primary)' : 'var(--text-muted)',
               }}
             >
-              {isDevelopment ? '🧩 Desarrollo' : '🛟 Incidencia'}
+              {isDevelopment ? <Puzzle size={12} strokeWidth={2} aria-hidden="true" /> : <LifeBuoy size={12} strokeWidth={2} aria-hidden="true" />}
+              {isDevelopment ? 'Desarrollo' : 'Incidencia'}
             </span>
           </div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, lineHeight: 1.3, maxWidth: '800px' }}>
@@ -269,8 +283,14 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
                   <span style={{ color: 'var(--text-secondary)' }}>Motor de IA</span>
-                  <span className="badge" style={{ background: 'var(--bg-muted)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)', fontSize: '0.65rem' }}>
-                    {ticket.source === 'gemini' ? '🧠 GEMINI' : ticket.source === 'mock' ? '⚙️ REGLAS' : '📋 SISTEMA'}
+                  <span className="badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: 'var(--bg-muted)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)', fontSize: '0.65rem' }}>
+                    {ticket.source === 'gemini' ? (
+                      <><Brain size={12} strokeWidth={2} aria-hidden="true" /> GEMINI</>
+                    ) : ticket.source === 'mock' ? (
+                      <><Settings2 size={12} strokeWidth={2} aria-hidden="true" /> REGLAS</>
+                    ) : (
+                      <><ClipboardList size={12} strokeWidth={2} aria-hidden="true" /> SISTEMA</>
+                    )}
                   </span>
                 </div>
 
@@ -313,35 +333,38 @@ export default function TicketDetailClient({ ticket, initialComments, currentUse
                 <button
                   type="button"
                   onClick={() => handleStatusChange('open')}
-                  style={{ 
-                    textAlign: 'left', padding: '0.75rem 1rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
-                    background: status === 'open' ? 'var(--primary)' : 'var(--bg-card)', 
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.5rem',
+                    padding: '0.75rem 1rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                    background: status === 'open' ? 'var(--primary)' : 'var(--bg-card)',
                     color: status === 'open' ? 'white' : 'var(--text-primary)',
                     border: status === 'open' ? '1px solid var(--primary)' : '1px solid var(--border-subtle)'
                   }}>
-                  ⭕ Re-abrir Ticket
+                  <RotateCcw size={16} strokeWidth={2} aria-hidden="true" /> Re-abrir Ticket
                 </button>
                 <button
                   type="button"
                   onClick={() => handleStatusChange('waiting_on_client')}
-                  style={{ 
-                    textAlign: 'left', padding: '0.75rem 1rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
-                    background: status === 'waiting_on_client' ? 'var(--warning)' : 'var(--bg-card)', 
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.5rem',
+                    padding: '0.75rem 1rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                    background: status === 'waiting_on_client' ? 'var(--warning)' : 'var(--bg-card)',
                     color: status === 'waiting_on_client' ? 'white' : 'var(--text-primary)',
                     border: status === 'waiting_on_client' ? '1px solid var(--warning)' : '1px solid var(--border-subtle)'
                   }}>
-                  ⏳ Esperando al Cliente
+                  <Clock size={16} strokeWidth={2} aria-hidden="true" /> Esperando al Cliente
                 </button>
                 <button
                   type="button"
                   onClick={() => handleStatusChange('closed')}
-                  style={{ 
-                    textAlign: 'left', padding: '0.75rem 1rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
-                    background: status === 'closed' ? 'var(--success)' : 'var(--bg-card)', 
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.5rem',
+                    padding: '0.75rem 1rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                    background: status === 'closed' ? 'var(--success)' : 'var(--bg-card)',
                     color: status === 'closed' ? 'white' : 'var(--text-primary)',
                     border: status === 'closed' ? '1px solid var(--success)' : '1px solid var(--border-subtle)'
                   }}>
-                  ✅ Finalizar Ticket
+                  <CircleCheck size={16} strokeWidth={2} aria-hidden="true" /> Finalizar Ticket
                 </button>
               </div>
             </div>

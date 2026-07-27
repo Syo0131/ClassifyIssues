@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Sparkles } from 'lucide-react';
 import CustomSelect from './CustomSelect';
 
 interface SubmitFormProps {
@@ -128,7 +129,7 @@ export default function SubmitForm({ projects = [], onResult, onLoading }: Submi
             transition: 'background 0.2s'
           }}
         >
-          {loading ? 'Analizando...' : 'Crear Ticket ✧'}
+          {loading ? 'Analizando...' : <>Crear Ticket <Sparkles size={15} strokeWidth={2} aria-hidden="true" /></>}
         </button>
       </div>
     </form>

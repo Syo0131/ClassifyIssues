@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { Search } from "lucide-react";
 import TicketTable from "@/components/TicketTable";
 import CustomSelect from "@/components/CustomSelect";
 import { Ticket } from "@/lib/types";
@@ -281,17 +282,19 @@ export default function DashboardPage() {
       >
         <div className="dashboard-toolbar">
           <div style={{ position: "relative", flex: "1", minWidth: "200px" }}>
-            <span
+            <Search
+              size={16}
+              aria-hidden="true"
               style={{
                 position: "absolute",
                 left: "1rem",
                 top: "50%",
                 transform: "translateY(-50%)",
-                opacity: 0.5,
+                color: "var(--text-muted)",
+                pointerEvents: "none",
               }}
-            >
-              🔍
-            </span>
+            />
+            {/* padding-left del input deja hueco para el icono */}
             <input
               type="text"
               className="form-input"

@@ -3,6 +3,7 @@
 import { Ticket } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Inbox, LifeBuoy, Puzzle } from 'lucide-react';
 
 interface TicketTableProps {
   tickets: Ticket[];
@@ -23,17 +24,22 @@ const STATUS_LABEL: Record<Ticket['status'], string> = {
 
 function TypeBadge({ ticket }: { ticket: Ticket }) {
   const isDev = ticket.type === 'desarrollo';
+  const Icon = isDev ? Puzzle : LifeBuoy;
   return (
     <span
       className="badge"
       style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.35rem',
         whiteSpace: 'nowrap',
         background: 'transparent',
         border: `1px solid ${isDev ? 'var(--primary)' : 'var(--border-subtle)'}`,
         color: isDev ? 'var(--primary)' : 'var(--text-muted)',
       }}
     >
-      {isDev ? '🧩 Desarrollo' : '🛟 Incidencia'}
+      <Icon size={13} strokeWidth={2} aria-hidden="true" />
+      {isDev ? 'Desarrollo' : 'Incidencia'}
     </span>
   );
 }
@@ -44,7 +50,7 @@ export default function TicketTable({ tickets }: TicketTableProps) {
   if (tickets.length === 0) {
     return (
       <div className="card" style={{ padding: '4rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-        <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>📭</div>
+        <Inbox size={40} strokeWidth={1.5} style={{ marginBottom: '1rem' }} aria-hidden="true" />
         <p>No se encontraron tickets en esta sección.</p>
       </div>
     );

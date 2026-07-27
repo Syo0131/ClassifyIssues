@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Download, TriangleAlert } from 'lucide-react';
 import { Budget, DevelopmentSpec, RequirementPriority } from '@/lib/types';
 import { formatMoney } from '@/lib/budget';
 
@@ -82,9 +83,10 @@ export default function DevelopmentSpecPanel({
         <a
           href={`/api/tickets/${ticketId}/prd`}
           className="btn-primary"
-          style={{ padding: '0.55rem 1.2rem', fontSize: '0.85rem', borderRadius: '8px', whiteSpace: 'nowrap' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 1.2rem', fontSize: '0.85rem', borderRadius: '8px', whiteSpace: 'nowrap' }}
         >
-          ⬇ Descargar PDF
+          <Download size={15} strokeWidth={2} aria-hidden="true" />
+          Descargar PDF
         </a>
       </div>
 
@@ -98,8 +100,9 @@ export default function DevelopmentSpecPanel({
             background: 'rgba(245, 158, 11, 0.08)',
           }}
         >
-          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--warning)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.5rem' }}>
-            ⚠ Requiere revisión
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--warning)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.5rem' }}>
+            <TriangleAlert size={15} strokeWidth={2.2} aria-hidden="true" />
+            Requiere revisión
           </div>
           <ul style={{ margin: 0, paddingLeft: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.85rem', lineHeight: 1.5, color: 'var(--text-secondary)' }}>
             {spec.warnings.map((w, i) => (

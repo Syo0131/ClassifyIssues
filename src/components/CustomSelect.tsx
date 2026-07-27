@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 interface Option {
   value: string;
@@ -80,15 +81,7 @@ export default function CustomSelect({ value, onChange, options, integratedMenu 
             transition: 'transform 120ms ease',
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-            <polyline
-              points="6 9 12 15 18 9"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <ChevronDown size={14} strokeWidth={2} aria-hidden="true" />
         </span>
       )}
 

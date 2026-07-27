@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { Check, Info, TriangleAlert, X } from 'lucide-react';
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -75,15 +76,7 @@ export function ConfirmModal({
                 justifyContent: 'center',
               }}
             >
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              <TriangleAlert size={22} strokeWidth={2} aria-hidden="true" />
             </div>
           )}
           <div style={{ flex: 1 }}>
@@ -189,22 +182,9 @@ export function AlertModal({
               justifyContent: 'center',
             }}
           >
-            {palette.icon === 'check' && (
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
-            {palette.icon === 'x' && (
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
-            {palette.icon === 'info' && (
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
-                <path d="M12 16v-4M12 8h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            )}
+            {palette.icon === 'check' && <Check size={22} strokeWidth={2.5} aria-hidden="true" />}
+            {palette.icon === 'x' && <X size={22} strokeWidth={2.5} aria-hidden="true" />}
+            {palette.icon === 'info' && <Info size={22} strokeWidth={2} aria-hidden="true" />}
           </div>
           <div style={{ flex: 1 }}>
             <h2 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-primary)' }}>

@@ -1,18 +1,19 @@
 'use client';
 
 import { useState } from 'react';
+import { LifeBuoy, Puzzle, type LucideIcon } from 'lucide-react';
 import { TicketType } from '@/lib/types';
 
-const OPTIONS: { type: TicketType; icon: string; title: string; description: string }[] = [
+const OPTIONS: { type: TicketType; icon: LucideIcon; title: string; description: string }[] = [
   {
     type: 'incidencia',
-    icon: '🛟',
+    icon: LifeBuoy,
     title: 'Incidencia',
     description: 'Algo que ya existe ha dejado de funcionar o va mal, y necesitas que lo revisemos.',
   },
   {
     type: 'desarrollo',
-    icon: '🧩',
+    icon: Puzzle,
     title: 'Desarrollo',
     description: 'Quieres algo nuevo: una funcionalidad, una mejora o un proyecto por presupuestar.',
   },
@@ -62,7 +63,7 @@ export default function ModeSelector({ onSelect }: { onSelect: (type: TicketType
                 gap: '0.75rem',
               }}
             >
-              <span style={{ fontSize: '2.25rem', lineHeight: 1 }} aria-hidden="true">{option.icon}</span>
+              <option.icon size={36} strokeWidth={1.5} color={isHovered ? 'var(--primary)' : 'var(--text-secondary)'} aria-hidden="true" />
               <span style={{ fontSize: '1.35rem', fontWeight: 600, letterSpacing: '-0.02em' }}>{option.title}</span>
               <span style={{ fontSize: '0.9rem', lineHeight: 1.5, color: 'var(--text-secondary)', fontWeight: 400 }}>
                 {option.description}

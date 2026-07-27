@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ArrowRight, Bot } from 'lucide-react';
 import CustomSelect from './CustomSelect';
 import { ChatMessage } from '@/lib/types';
 
@@ -169,8 +170,9 @@ export default function DevelopmentForm({ projects = [] }: DevelopmentFormProps)
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, maxWidth: '380px' }}>
             Te haremos unas breves preguntas para entender mejor tu solicitud antes de registrarla.
           </p>
-          <button type="submit" disabled={!canSubmit} style={primaryBtn(canSubmit)}>
-            Continuar →
+          <button type="submit" disabled={!canSubmit} style={{ ...primaryBtn(canSubmit), display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+            Continuar
+            <ArrowRight size={16} strokeWidth={2} aria-hidden="true" />
           </button>
         </div>
       </form>
@@ -203,7 +205,8 @@ export default function DevelopmentForm({ projects = [] }: DevelopmentFormProps)
                 }}
               >
                 {!isUser && (
-                  <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--primary)', marginBottom: '0.25rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--primary)', marginBottom: '0.25rem' }}>
+                    <Bot size={13} strokeWidth={2} aria-hidden="true" />
                     Asistente
                   </div>
                 )}
