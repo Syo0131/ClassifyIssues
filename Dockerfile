@@ -13,7 +13,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 # --frozen-lockfile es el equivalente a `npm ci`: falla si el lockfile no
 # concuerda con package.json en lugar de actualizarlo silenciosamente.
-RUN pnpm install --frozen-lockfile --config.onlyBuiltDependencies=sharp,unrs-resolver
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # Rebuild the source code only when needed
 FROM base AS builder
