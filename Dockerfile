@@ -1,4 +1,4 @@
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 # Corepack instala la versión de pnpm declarada en el campo "packageManager"
 # de package.json, así que la imagen y el entorno local usan siempre la misma.
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
