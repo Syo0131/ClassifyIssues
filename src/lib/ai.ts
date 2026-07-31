@@ -2,8 +2,10 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import {
   AnalysisResult,
   ChatMessage,
+  DevDataTable,
   DevModule,
   DevRequirement,
+  DevTableColumn,
   DevelopmentBrief,
   DevelopmentSpec,
   RequirementPriority,
@@ -69,10 +71,18 @@ Campos del JSON:
 - "risks": Array de riesgos con su posible mitigación.
 - "architecture": Párrafo describiendo la solución técnica propuesta y el stack.
 - "components": Array de componentes/servicios a construir o modificar.
-- "dataModel": Array de entidades de datos con sus campos principales.
+- "dataModel": Array de entidades de datos con sus campos principales, en texto libre (resumen).
 - "integrations": Array de sistemas externos o APIs necesarios.
 - "nonFunctional": Array de requisitos no funcionales (rendimiento, seguridad, accesibilidad, disponibilidad).
-- "modules": Array de objetos { "name": "...", "description": "...", "hoursMin": n, "hoursLikely": n, "hoursMax": n }.
+- "dataTables": Array de objetos { "name": "nombre_tabla", "description": "...", "columns": [{ "name": "...", "type": "...", "notes": "..." (opcional) }] }. SÓLO si el desarrollo requiere persistir datos NUEVOS (tablas que no existen ya en el stack del cliente). Si no aplica (p. ej. es un cambio visual, de copy, o usa datos ya existentes), usa un array vacío []. Máximo 6 tablas, máximo 8 columnas por tabla.
+- "flowDiagram": String en sintaxis Mermaid con el flujo principal del proceso o funcionalidad, SOLO cuando aporte valor visual real (varios pasos, decisiones, o roles distintos interactuando). Si no aplica (cambio simple, sin flujo que valga la pena diagramar), usa una cadena vacía "".
+  Reglas ESTRICTAS del diagrama, para que sea válido y renderice sin errores:
+  - Empieza siempre con "flowchart TD".
+  - IDs de nodo cortos y alfanuméricos sin espacios: A, B, C, Paso1...
+  - Etiquetas entre corchetes para pasos: A[Texto del paso]. Entre llaves para decisiones: B{¿Condición?}.
+  - Conecta con flechas simples: A --> B  o  B -->|Si| C  o  B -->|No| D.
+  - Dentro de las etiquetas NUNCA uses comillas, corchetes, llaves, pipes "|" ni punto y coma — sólo texto plano corto.
+  - Sin subgraphs, sin estilos, sin comentarios. Máximo 10 nodos.
 - "complexity": "low" | "medium" | "high".
 - "openQuestions": Array de preguntas abiertas para el cliente.
 
@@ -124,8 +134,13 @@ function getGeminiModelCached(profile: ModelProfile) {
   if (!apiKey || apiKey === 'mock' || apiKey === '') {
     throw new Error('Gemini not configured');
   }
-  // Alias estable: gemini-2.5-flash devuelve 404 para keys nuevas.
-  const modelName = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+  // Modelo fijo, no un alias "-latest": los alias apuntan silenciosamente al
+  // modelo más nuevo de Google, que suele traer la cuota gratuita más
+  // pequeña (ej. "gemini-flash-latest" pasó a resolver a un modelo con
+  // límite de 20 peticiones/día sin avisar). Pinnar una versión concreta da
+  // cuota estable y evita que un cambio de Google rompa la app sin tocar
+  // nuestro código.
+  const modelName = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
   const spec = `${apiKey}:${modelName}`;
 
   if (!global.__geminiModels || global.__geminiModelSpec !== spec) {
@@ -579,6 +594,70 @@ function fallbackModules(): DevModule[] {
   ];
 }
 
+function normalizeTableColumns(value: unknown): DevTableColumn[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    .slice(0, 8)
+    .map(item => {
+      const notes = toText(item.notes, '');
+      return {
+        name: toText(item.name, ''),
+        type: toText(item.type, 'text'),
+        ...(notes ? { notes } : {}),
+      };
+    })
+    .filter(col => col.name.length > 0);
+}
+
+/**
+ * Tablas nuevas que el desarrollo necesitaría, si aplica. No es obligatorio
+ * que la IA aporte esto — muchos tickets no requieren datos nuevos — así que
+ * un resultado vacío no genera aviso, a diferencia de los demás campos.
+ */
+function normalizeDataTables(value: unknown): DevDataTable[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    .slice(0, 6)
+    .map((item, index) => ({
+      name: toText(item.name, `tabla_${index + 1}`),
+      description: toText(item.description, ''),
+      columns: normalizeTableColumns(item.columns),
+    }))
+    // Una tabla sin columnas válidas no aporta nada; se descarta en silencio.
+    .filter(table => table.columns.length > 0);
+}
+
+/**
+ * Valida el Mermaid que puede llegar de la IA. No lo "arreglamos": retocar a
+ * ciegas una sintaxis rota puede dejarla igual de rota. Si no pasa una
+ * comprobación estructural mínima, se descarta y se avisa al revisor en vez de
+ * arriesgarse a guardar un diagrama que no va a renderizar en el panel.
+ */
+function normalizeFlowDiagram(value: unknown, warnings: string[]): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const diagram = value.trim();
+  if (!diagram) return undefined;
+
+  const MAX_LEN = 4000;
+  if (diagram.length > MAX_LEN) {
+    warnings.push('La IA devolvió un diagrama de flujo demasiado largo; se omitió. Puedes pedir que se regenere el análisis.');
+    return undefined;
+  }
+
+  // "graph" es un alias válido y equivalente de "flowchart" en Mermaid; lo
+  // aceptamos aunque el prompt pida "flowchart" explícitamente, por si acaso.
+  const startsValid = /^(flowchart|graph)\s+(TD|TB|LR|RL|BT)\b/i.test(diagram);
+  const hasEdges = /-->/.test(diagram);
+  if (!startsValid || !hasEdges) {
+    warnings.push('La IA devolvió un diagrama de flujo con formato inválido; se omitió. Puedes pedir que se regenere el análisis.');
+    return undefined;
+  }
+
+  return diagram;
+}
+
 // Campos array cuya ausencia merece un aviso al revisor (los más importantes de
 // un PRD/TRD). Se comprueban sobre la salida cruda del modelo.
 const REVIEWABLE_ARRAY_FIELDS: { key: keyof DevelopmentSpec; label: string }[] = [
@@ -600,6 +679,8 @@ function validateDevelopmentSpec(
   const warnings = [...extraWarnings];
   const modules = normalizeModules(spec.modules, warnings);
   const requirements = normalizeRequirements(spec.functionalRequirements);
+  const dataTables = normalizeDataTables(spec.dataTables);
+  const flowDiagram = normalizeFlowDiagram(spec.flowDiagram, warnings);
 
   // C1: en vez de vaciar en silencio, señalamos lo que la IA no aportó para que
   // el revisor sepa qué completar.
@@ -641,6 +722,8 @@ function validateDevelopmentSpec(
     dataModel: toStringArray(spec.dataModel),
     integrations: toStringArray(spec.integrations),
     nonFunctional: toStringArray(spec.nonFunctional),
+    dataTables: dataTables.length > 0 ? dataTables : undefined,
+    flowDiagram,
     modules: modules.length > 0 ? modules : fallbackModules(),
     complexity: validComplexity.includes(spec.complexity as 'low' | 'medium' | 'high')
       ? (spec.complexity as 'low' | 'medium' | 'high')

@@ -1,6 +1,7 @@
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib';
-import { Budget, DevelopmentSpec, Ticket } from './types';
+import { Budget, DevDataTable, DevelopmentSpec, Ticket } from './types';
 import { calculateBudget, formatMoney } from './budget';
+import { collapseBlankLines } from './chat';
 
 /**
  * Genera el PDF del PRD/TRD + presupuesto de un ticket de desarrollo.
@@ -40,12 +41,23 @@ function sanitize(input: string): string {
     .replace(/[^\x20-\x7E\xA1-\xFF€™\n]/g, '');
 }
 
+/** Qué documentos incluir en el PDF: cada uno se puede descargar solo o combinado. */
+export interface PdfSections {
+  prd: boolean;
+  trd: boolean;
+  budget: boolean;
+}
+
+export const FULL_PDF_SECTIONS: PdfSections = { prd: true, trd: true, budget: true };
+
 interface Doc {
   pdf: PDFDocument;
   page: PDFPage;
   y: number;
   regular: PDFFont;
   bold: PDFFont;
+  /** Monoespaciada, sólo para el bloque de código del diagrama de flujo. */
+  mono: PDFFont;
 }
 
 function newPage(doc: Doc): void {
@@ -258,6 +270,62 @@ function drawTableRow(doc: Doc, cells: string[], opts: { header?: boolean; bold?
   });
 }
 
+// ─── Tablas del modelo de datos ───────────────────────────────────────────────
+// Formato propio (no reutiliza drawTableRow/TABLE_COLUMNS): esas están
+// pensadas para valores numéricos alineados a la derecha, mientras que aquí
+// todo es texto y "Notas" necesita envolver a varias líneas.
+
+function drawDataTables(doc: Doc, tables: DevDataTable[]): void {
+  const col1 = MARGIN + CONTENT_WIDTH * 0.28;
+  const col2 = MARGIN + CONTENT_WIDTH * 0.46;
+
+  for (const table of tables) {
+    drawParagraph(doc, table.name, { font: doc.bold, size: 10.5, gap: table.description ? 2 : 6 });
+    if (table.description) {
+      drawParagraph(doc, table.description, { size: 9, color: COLOR_MUTED, gap: 8 });
+    }
+
+    ensureSpace(doc, 20);
+    ['Columna', 'Tipo', 'Notas'].forEach((label, i) => {
+      doc.page.drawText(label, {
+        x: [MARGIN, col1, col2][i],
+        y: doc.y - 9,
+        size: 8,
+        font: doc.bold,
+        color: COLOR_MUTED,
+      });
+    });
+    doc.y -= 13;
+    doc.page.drawLine({
+      start: { x: MARGIN, y: doc.y },
+      end: { x: MARGIN + CONTENT_WIDTH, y: doc.y },
+      thickness: 0.5,
+      color: COLOR_RULE,
+    });
+    doc.y -= 6;
+
+    for (const column of table.columns) {
+      const nameLines = wrapText(column.name, doc.regular, 9, col1 - MARGIN - 6);
+      const typeLines = wrapText(column.type, doc.regular, 9, col2 - col1 - 6);
+      const notesLines = wrapText(column.notes || '-', doc.regular, 9, MARGIN + CONTENT_WIDTH - col2);
+      const rowLines = Math.max(nameLines.length, typeLines.length, notesLines.length, 1);
+      ensureSpace(doc, rowLines * 12 + 4);
+
+      const top = doc.y - 9;
+      [nameLines, typeLines, notesLines].forEach((lines, colIndex) => {
+        const x = [MARGIN, col1, col2][colIndex];
+        const color = colIndex === 0 ? COLOR_TEXT : COLOR_MUTED;
+        lines.forEach((line, i) => {
+          doc.page.drawText(sanitize(line), { x, y: top - i * 12, size: 9, font: doc.regular, color });
+        });
+      });
+
+      doc.y -= rowLines * 12 + 4;
+    }
+    doc.y -= 12;
+  }
+}
+
 function drawBudgetTable(doc: Doc, budget: Budget): void {
   drawTableRow(doc, TABLE_COLUMNS.map(c => c.label), { header: true });
 
@@ -314,10 +382,10 @@ function drawBudgetTable(doc: Doc, budget: Budget): void {
 
 // ─── Documento ────────────────────────────────────────────────────────────────
 
-function drawCoverHeader(doc: Doc, ticket: Ticket, spec: DevelopmentSpec): void {
+function drawCoverHeader(doc: Doc, ticket: Ticket, spec: DevelopmentSpec, bandLabel: string): void {
   doc.page.drawRectangle({ x: 0, y: A4.height - 118, width: A4.width, height: 118, color: COLOR_BAND });
 
-  doc.page.drawText('PRD / TRD + PRESUPUESTO', {
+  doc.page.drawText(sanitize(bandLabel), {
     x: MARGIN,
     y: A4.height - 46,
     size: 8.5,
@@ -377,22 +445,48 @@ const REQUIREMENT_PRIORITY_LABEL = {
   could: 'Opcional',
 } as const;
 
-export async function buildDevelopmentPdf(ticket: Ticket, spec: DevelopmentSpec): Promise<Uint8Array> {
+/** Etiqueta corta para portada/título/nombre de archivo según lo incluido. */
+function sectionsSummary(sections: PdfSections): { band: string; file: string } {
+  const parts: { label: string; file: string }[] = [];
+  if (sections.prd) parts.push({ label: 'PRD', file: 'PRD' });
+  if (sections.trd) parts.push({ label: 'TRD', file: 'TRD' });
+  if (sections.budget) parts.push({ label: 'PRESUPUESTO', file: 'Estimacion' });
+  return {
+    band: parts.map(p => p.label).join(' / ') || 'DOCUMENTO',
+    file: parts.map(p => p.file).join('-') || 'Documento',
+  };
+}
+
+/**
+ * Genera el PDF. `sections` controla qué documentos incluir — PRD, TRD y/o
+ * estimación se pueden descargar solos o combinados; por defecto, todos.
+ * Las cabeceras se numeran de forma dinámica según lo que quede incluido, así
+ * que "sólo TRD" no arrastra un "2." colgante de una sección que no está.
+ */
+export async function buildDevelopmentPdf(
+  ticket: Ticket,
+  spec: DevelopmentSpec,
+  sections: PdfSections = FULL_PDF_SECTIONS
+): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const mono = await pdf.embedFont(StandardFonts.Courier);
 
-  const doc: Doc = { pdf, page: pdf.addPage([A4.width, A4.height]), y: A4.height - MARGIN, regular, bold };
+  const doc: Doc = { pdf, page: pdf.addPage([A4.width, A4.height]), y: A4.height - MARGIN, regular, bold, mono };
+  const { band, file } = sectionsSummary(sections);
 
-  pdf.setTitle(sanitize(`PRD-TRD Ticket ${ticket.id} - ${spec.title}`));
-  pdf.setSubject('Documento de requisitos de producto y técnicos con estimación económica');
+  pdf.setTitle(sanitize(`${file} Ticket ${ticket.id} - ${spec.title}`));
+  pdf.setSubject('Documento de requisitos y estimación económica generado para revisión interna');
   pdf.setProducer('Support Ticket System');
 
-  drawCoverHeader(doc, ticket, spec);
+  drawCoverHeader(doc, ticket, spec, `${band} · TICKET #${ticket.id}`);
 
   // ── Avisos para revisión (si los hay) ──
   // El PDF es staff-only, así que es el sitio correcto para listar lo que el
-  // análisis automático dejó pendiente o poco fiable. "⚠" no es WinAnsi.
+  // análisis automático dejó pendiente o poco fiable. Se muestran siempre que
+  // existan, independientemente de qué secciones se hayan pedido: son sobre la
+  // fiabilidad del análisis en general, no de un documento en concreto.
   if (spec.warnings?.length > 0) {
     drawHeading(doc, 'Avisos para revision', 1);
     drawParagraph(
@@ -403,100 +497,132 @@ export async function buildDevelopmentPdf(ticket: Ticket, spec: DevelopmentSpec)
     drawBullets(doc, spec.warnings);
   }
 
-  // ── 1. PRD ──
-  drawHeading(doc, '1. Product Requirements Document (PRD)', 1);
+  let n = 0;
 
-  drawHeading(doc, '1.1 Problema / necesidad', 2);
-  drawParagraph(doc, spec.problem);
+  // ── PRD ──
+  if (sections.prd) {
+    n += 1;
+    drawHeading(doc, `${n}. Product Requirements Document (PRD)`, 1);
 
-  drawHeading(doc, '1.2 Objetivo', 2);
-  drawParagraph(doc, spec.goal);
+    drawHeading(doc, `${n}.1 Problema / necesidad`, 2);
+    drawParagraph(doc, spec.problem);
 
-  drawHeading(doc, '1.3 Usuarios destinatarios', 2);
-  drawBullets(doc, spec.targetUsers);
+    drawHeading(doc, `${n}.2 Objetivo`, 2);
+    drawParagraph(doc, spec.goal);
 
-  drawHeading(doc, '1.4 Alcance', 2);
-  drawBullets(doc, spec.scope);
+    drawHeading(doc, `${n}.3 Usuarios destinatarios`, 2);
+    drawBullets(doc, spec.targetUsers);
 
-  drawHeading(doc, '1.5 Fuera de alcance', 2);
-  drawBullets(doc, spec.outOfScope, 'No se excluyó nada explícitamente.');
+    drawHeading(doc, `${n}.4 Alcance`, 2);
+    drawBullets(doc, spec.scope);
 
-  drawHeading(doc, '1.6 Requisitos funcionales', 2);
-  for (const requirement of spec.functionalRequirements) {
-    drawParagraph(
-      doc,
-      `${requirement.id} · ${requirement.title}  [${REQUIREMENT_PRIORITY_LABEL[requirement.priority]}]`,
-      { font: doc.bold, size: 10, gap: 1 }
-    );
-    if (requirement.description) {
-      drawParagraph(doc, requirement.description, { size: 9.5, indent: 12, color: COLOR_MUTED, gap: 6 });
+    drawHeading(doc, `${n}.5 Fuera de alcance`, 2);
+    drawBullets(doc, spec.outOfScope, 'No se excluyó nada explícitamente.');
+
+    drawHeading(doc, `${n}.6 Requisitos funcionales`, 2);
+    for (const requirement of spec.functionalRequirements) {
+      drawParagraph(
+        doc,
+        `${requirement.id} · ${requirement.title}  [${REQUIREMENT_PRIORITY_LABEL[requirement.priority]}]`,
+        { font: doc.bold, size: 10, gap: 1 }
+      );
+      if (requirement.description) {
+        drawParagraph(doc, requirement.description, { size: 9.5, indent: 12, color: COLOR_MUTED, gap: 6 });
+      }
+    }
+
+    drawHeading(doc, `${n}.7 Métricas de éxito`, 2);
+    drawBullets(doc, spec.successMetrics, 'Pendiente de acordar con el cliente.');
+
+    drawHeading(doc, `${n}.8 Supuestos`, 2);
+    drawBullets(doc, spec.assumptions, 'Sin supuestos registrados.');
+
+    drawHeading(doc, `${n}.9 Riesgos`, 2);
+    drawBullets(doc, spec.risks, 'Sin riesgos identificados.');
+
+    if (spec.openQuestions.length > 0) {
+      drawHeading(doc, `${n}.10 Cuestiones abiertas`, 2);
+      drawBullets(doc, spec.openQuestions);
+    }
+
+    // El diagrama es interactivo (Mermaid) y sólo se renderiza en el panel
+    // web; aquí dejamos el código fuente en texto, útil igualmente para leer
+    // la secuencia de pasos o pegarlo en un editor Mermaid.
+    if (spec.flowDiagram) {
+      drawHeading(doc, `${n}.11 Diagrama de flujo`, 2);
+      drawParagraph(
+        doc,
+        'Diagrama interactivo disponible en la pestaña "Flujo" del ticket. Código fuente (Mermaid) para referencia:',
+        { size: 9, color: COLOR_MUTED, gap: 6 }
+      );
+      drawParagraph(doc, spec.flowDiagram, { font: doc.mono, size: 7.5, color: COLOR_TEXT });
     }
   }
 
-  drawHeading(doc, '1.7 Métricas de éxito', 2);
-  drawBullets(doc, spec.successMetrics, 'Pendiente de acordar con el cliente.');
+  // ── TRD ──
+  if (sections.trd) {
+    n += 1;
+    drawHeading(doc, `${n}. Technical Requirements Document (TRD)`, 1);
 
-  drawHeading(doc, '1.8 Supuestos', 2);
-  drawBullets(doc, spec.assumptions, 'Sin supuestos registrados.');
+    drawHeading(doc, `${n}.1 Arquitectura propuesta`, 2);
+    drawParagraph(doc, spec.architecture);
 
-  drawHeading(doc, '1.9 Riesgos', 2);
-  drawBullets(doc, spec.risks, 'Sin riesgos identificados.');
+    drawHeading(doc, `${n}.2 Componentes`, 2);
+    drawBullets(doc, spec.components);
 
-  // ── 2. TRD ──
-  drawHeading(doc, '2. Technical Requirements Document (TRD)', 1);
+    drawHeading(doc, `${n}.3 Modelo de datos`, 2);
+    if (spec.dataTables && spec.dataTables.length > 0) {
+      drawDataTables(doc, spec.dataTables);
+    } else {
+      drawBullets(doc, spec.dataModel, 'Este desarrollo no requiere tablas nuevas.');
+    }
 
-  drawHeading(doc, '2.1 Arquitectura propuesta', 2);
-  drawParagraph(doc, spec.architecture);
+    drawHeading(doc, `${n}.4 Integraciones`, 2);
+    drawBullets(doc, spec.integrations, 'No se identificaron integraciones externas.');
 
-  drawHeading(doc, '2.2 Componentes', 2);
-  drawBullets(doc, spec.components);
+    drawHeading(doc, `${n}.5 Requisitos no funcionales`, 2);
+    drawBullets(doc, spec.nonFunctional);
+  }
 
-  drawHeading(doc, '2.3 Modelo de datos', 2);
-  drawBullets(doc, spec.dataModel);
+  // ── Estimación ──
+  if (sections.budget) {
+    n += 1;
+    drawHeading(doc, `${n}. Estimación y presupuesto aproximado`, 1);
+    drawBudgetTable(doc, calculateBudget(spec));
 
-  drawHeading(doc, '2.4 Integraciones', 2);
-  drawBullets(doc, spec.integrations, 'No se identificaron integraciones externas.');
-
-  drawHeading(doc, '2.5 Requisitos no funcionales', 2);
-  drawBullets(doc, spec.nonFunctional);
-
-  // ── 3. Estimación ──
-  drawHeading(doc, '3. Estimación y presupuesto aproximado', 1);
-  drawBudgetTable(doc, calculateBudget(spec));
-
-  drawHeading(doc, '3.1 Detalle de módulos', 2);
-  for (const item of spec.modules) {
-    drawParagraph(doc, `${item.name} (${item.hoursLikely} h)`, { font: doc.bold, size: 10, gap: 1 });
-    if (item.description) {
-      drawParagraph(doc, item.description, { size: 9.5, indent: 12, color: COLOR_MUTED, gap: 6 });
+    drawHeading(doc, `${n}.1 Detalle de módulos`, 2);
+    for (const item of spec.modules) {
+      drawParagraph(doc, `${item.name} (${item.hoursLikely} h)`, { font: doc.bold, size: 10, gap: 1 });
+      if (item.description) {
+        drawParagraph(doc, item.description, { size: 9.5, indent: 12, color: COLOR_MUTED, gap: 6 });
+      }
     }
   }
 
-  // ── 4. Cuestiones abiertas ──
-  if (spec.openQuestions.length > 0) {
-    drawHeading(doc, '4. Cuestiones abiertas', 1);
-    drawBullets(doc, spec.openQuestions);
-  }
+  // ── Anexos: contexto de origen. Sólo tienen sentido junto al PRD, que es lo
+  // que documentan (de dónde salieron el problema y los requisitos). ──
+  if (sections.prd) {
+    drawHeading(doc, 'Anexo: solicitud original del cliente', 1);
+    // collapseBlankLines: tickets antiguos pueden tener un pegado con decenas
+    // de saltos de línea en cascada, que aquí desperdiciarían páginas enteras.
+    drawParagraph(doc, collapseBlankLines(ticket.raw_text), { size: 9, color: COLOR_MUTED });
 
-  // ── Anexo ──
-  drawHeading(doc, 'Anexo: solicitud original del cliente', 1);
-  drawParagraph(doc, ticket.raw_text, { size: 9, color: COLOR_MUTED });
-
-  // Conversación de refinamiento (si la hubo): contexto de por qué el documento
-  // dice lo que dice. Sólo si aportó algo más que la petición inicial.
-  if (spec.conversation && spec.conversation.length > 1) {
-    drawHeading(doc, 'Anexo: conversacion de refinamiento', 1);
-    for (const m of spec.conversation) {
-      const label = m.role === 'assistant' ? 'Asistente IA:' : 'Cliente:';
-      drawParagraph(doc, `${label} ${m.content}`, {
-        size: 9,
-        color: m.role === 'assistant' ? COLOR_ACCENT : COLOR_TEXT,
-        gap: 6,
-      });
+    // Conversación de refinamiento (si la hubo): sólo si aportó algo más que
+    // la petición inicial.
+    if (spec.conversation && spec.conversation.length > 1) {
+      drawHeading(doc, 'Anexo: conversacion de refinamiento', 1);
+      for (const m of spec.conversation) {
+        const label = m.role === 'assistant' ? 'Asistente IA:' : 'Cliente:';
+        drawParagraph(doc, `${label} ${collapseBlankLines(m.content)}`, {
+          size: 9,
+          color: m.role === 'assistant' ? COLOR_ACCENT : COLOR_TEXT,
+          gap: 6,
+        });
+      }
     }
   }
 
-  drawFooters(pdf, regular, `Ticket #${ticket.id} - ${ticket.project || 'General'}`);
+  drawFooters(pdf, regular, `Ticket #${ticket.id} - ${ticket.project || 'General'} - ${band}`);
 
   return pdf.save();
 }

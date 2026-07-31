@@ -50,6 +50,19 @@ export interface DevModule {
   hoursMax: number;
 }
 
+export interface DevTableColumn {
+  name: string;
+  type: string;
+  notes?: string;
+}
+
+/** Una tabla del modelo de datos, con columnas tipadas. */
+export interface DevDataTable {
+  name: string;
+  description: string;
+  columns: DevTableColumn[];
+}
+
 /**
  * Documento generado por la IA para tickets de tipo `desarrollo`.
  * Se persiste íntegro en `tickets.spec` (JSONB) y alimenta tanto la vista de
@@ -77,6 +90,21 @@ export interface DevelopmentSpec {
   dataModel: string[];
   integrations: string[];
   nonFunctional: string[];
+  /**
+   * Esquema estructurado de tablas (nombre + columnas), cuando el desarrollo
+   * necesita persistir datos nuevos. `undefined`/vacío si no aplica — no todo
+   * ticket de desarrollo requiere tablas nuevas. Cuando está presente, la UI y
+   * el PDF lo muestran en vez de la lista plana `dataModel`.
+   */
+  dataTables?: DevDataTable[];
+  /**
+   * Diagrama de flujo del proceso/funcionalidad, en sintaxis Mermaid
+   * (`flowchart TD ...`). `undefined`/vacío si la IA no considera que el
+   * ticket amerite uno (p. ej. un cambio de copy o un ajuste visual simple).
+   * Se renderiza sólo en el panel web (Mermaid necesita un navegador); el PDF
+   * no lo incluye como imagen, ver `lib/pdf.ts`.
+   */
+  flowDiagram?: string;
 
   // ── Estimación ──
   modules: DevModule[];

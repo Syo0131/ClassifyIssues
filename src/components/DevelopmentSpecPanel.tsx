@@ -1,9 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Download, TriangleAlert } from 'lucide-react';
-import { Budget, DevelopmentSpec, RequirementPriority } from '@/lib/types';
+import { TriangleAlert } from 'lucide-react';
+import { Budget, DevDataTable, DevelopmentSpec, RequirementPriority } from '@/lib/types';
 import { formatMoney } from '@/lib/budget';
+import { collapseBlankLines } from '@/lib/chat';
+import DownloadPdfMenu from './DownloadPdfMenu';
+import MermaidDiagram from './MermaidDiagram';
 
 const PRIORITY_LABEL: Record<RequirementPriority, string> = {
   must: 'Imprescindible',
@@ -17,13 +20,7 @@ const COMPLEXITY_LABEL: Record<DevelopmentSpec['complexity'], string> = {
   high: 'Alta',
 };
 
-type TabId = 'prd' | 'trd' | 'budget' | 'chat';
-
-const BASE_TABS: { id: TabId; label: string }[] = [
-  { id: 'prd', label: 'PRD · Producto' },
-  { id: 'trd', label: 'TRD · Técnico' },
-  { id: 'budget', label: 'Estimación' },
-];
+type TabId = 'prd' | 'trd' | 'flow' | 'budget' | 'chat';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -57,6 +54,49 @@ function Paragraph({ children }: { children: React.ReactNode }) {
   );
 }
 
+function DataTablesView({ tables }: { tables: DevDataTable[] }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      {tables.map(table => (
+        <div key={table.name} style={{ border: '1px solid var(--border-subtle)', borderRadius: '10px', overflow: 'hidden' }}>
+          <div style={{ padding: '0.75rem 0.9rem', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-muted)' }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>{table.name}</div>
+            {table.description && (
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>{table.description}</div>
+            )}
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
+                  <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>Columna</th>
+                  <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>Tipo</th>
+                  <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>Notas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {table.columns.map(col => (
+                  <tr key={col.name}>
+                    <td style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                      {col.name}
+                    </td>
+                    <td style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
+                      {col.type}
+                    </td>
+                    <td style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
+                      {col.notes || '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Documentación generada por la IA para un ticket de tipo `desarrollo`. */
 export default function DevelopmentSpecPanel({
   ticketId,
@@ -69,7 +109,17 @@ export default function DevelopmentSpecPanel({
 }) {
   const [tab, setTab] = useState<TabId>('prd');
   const hasConversation = !!spec.conversation && spec.conversation.length > 1;
-  const tabs = hasConversation ? [...BASE_TABS, { id: 'chat' as TabId, label: 'Conversación' }] : BASE_TABS;
+  const hasFlow = !!spec.flowDiagram;
+
+  // "Flujo" y "Conversación" sólo aparecen cuando aplican: no todo ticket de
+  // desarrollo tiene un flujo que valga la pena diagramar, ni pasó por el chat.
+  const tabs: { id: TabId; label: string }[] = [
+    { id: 'prd', label: 'PRD · Producto' },
+    { id: 'trd', label: 'TRD · Técnico' },
+    ...(hasFlow ? [{ id: 'flow' as TabId, label: 'Flujo' }] : []),
+    { id: 'budget', label: 'Estimación' },
+    ...(hasConversation ? [{ id: 'chat' as TabId, label: 'Conversación' }] : []),
+  ];
 
   return (
     <div style={{ border: '1px solid var(--border-subtle)', borderRadius: '12px', overflow: 'hidden', background: 'var(--bg-card)' }}>
@@ -80,14 +130,7 @@ export default function DevelopmentSpecPanel({
             Complejidad {COMPLEXITY_LABEL[spec.complexity]}
           </p>
         </div>
-        <a
-          href={`/api/tickets/${ticketId}/prd`}
-          className="btn-primary"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 1.2rem', fontSize: '0.85rem', borderRadius: '8px', whiteSpace: 'nowrap' }}
-        >
-          <Download size={15} strokeWidth={2} aria-hidden="true" />
-          Descargar PDF
-        </a>
+        <DownloadPdfMenu ticketId={ticketId} />
       </div>
 
       {spec.warnings?.length > 0 && (
@@ -184,11 +227,26 @@ export default function DevelopmentSpecPanel({
           <>
             <Section title="Arquitectura propuesta"><Paragraph>{spec.architecture}</Paragraph></Section>
             <Section title="Componentes"><Bullets items={spec.components} /></Section>
-            <Section title="Modelo de datos"><Bullets items={spec.dataModel} /></Section>
+            <Section title="Modelo de datos">
+              {spec.dataTables && spec.dataTables.length > 0 ? (
+                <DataTablesView tables={spec.dataTables} />
+              ) : (
+                <Bullets items={spec.dataModel} empty="Este desarrollo no requiere tablas nuevas." />
+              )}
+            </Section>
             <Section title="Integraciones">
               <Bullets items={spec.integrations} empty="No se identificaron integraciones externas." />
             </Section>
             <Section title="Requisitos no funcionales"><Bullets items={spec.nonFunctional} /></Section>
+          </>
+        )}
+
+        {tab === 'flow' && spec.flowDiagram && (
+          <>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0 0 1rem', lineHeight: 1.5 }}>
+              Diagrama generado a partir de la solicitud. Es un borrador automático: revísalo junto con el resto del análisis.
+            </p>
+            <MermaidDiagram chart={spec.flowDiagram} />
           </>
         )}
 
@@ -305,7 +363,7 @@ export default function DevelopmentSpecPanel({
                     <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: isClient ? 'var(--text-muted)' : 'var(--primary)', marginBottom: '0.2rem' }}>
                       {isClient ? (i === 0 ? 'Cliente · petición inicial' : 'Cliente') : 'Asistente IA'}
                     </div>
-                    <p style={{ fontSize: '0.9rem', lineHeight: 1.5, color: 'var(--text-primary)', margin: 0, whiteSpace: 'pre-wrap' }}>{m.content}</p>
+                    <p style={{ fontSize: '0.9rem', lineHeight: 1.5, color: 'var(--text-primary)', margin: 0, whiteSpace: 'pre-wrap' }}>{collapseBlankLines(m.content)}</p>
                   </div>
                 );
               })}

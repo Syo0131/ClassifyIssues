@@ -1,23 +1,7 @@
 import { NextResponse } from 'next/server';
 import { nextDevChatQuestion } from '@/lib/ai';
-import type { ChatMessage } from '@/lib/types';
+import { parseConversation } from '@/lib/chat';
 import { auth } from '@/auth';
-
-const MAX_MSG_LEN = 4_000;
-const MAX_CONVERSATION_MSGS = 30;
-
-/** Sanea la conversación recibida del cliente (misma forma que en /api/analyze). */
-function parseConversation(value: unknown): ChatMessage[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((m): m is { role: unknown; content: unknown } => !!m && typeof m === 'object')
-    .slice(0, MAX_CONVERSATION_MSGS)
-    .map(m => ({
-      role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
-      content: typeof m.content === 'string' ? m.content.trim().slice(0, MAX_MSG_LEN) : '',
-    }))
-    .filter(m => m.content.length > 0);
-}
 
 /**
  * Turno del chat de refinamiento previo a generar el PRD/TRD. Recibe la
