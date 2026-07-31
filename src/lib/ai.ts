@@ -71,10 +71,11 @@ Campos del JSON:
 - "risks": Array de riesgos con su posible mitigación.
 - "architecture": Párrafo describiendo la solución técnica propuesta y el stack.
 - "components": Array de componentes/servicios a construir o modificar.
-- "dataModel": Array de entidades de datos con sus campos principales, en texto libre (resumen).
+- "dataModel" y "dataTables" son EXCLUYENTES: no describas la misma entidad en los dos. En cuanto identifiques una entidad de datos NUEVA (Usuario, Pedido, Producto, etc., aunque sea obvia o mencionada de pasada), va SIEMPRE en "dataTables" como tabla estructurada — NUNCA sólo como texto en "dataModel". No dejar la aportación en texto libre y omitir la estructurada es un error.
+  - "dataModel": Array de notas breves SOLO sobre datos YA EXISTENTES que este desarrollo reutiliza sin cambios (p. ej. "Reutiliza la tabla de usuarios existente del cliente"). Si no hay nada que reutilizar, usa un array vacío [].
 - "integrations": Array de sistemas externos o APIs necesarios.
 - "nonFunctional": Array de requisitos no funcionales (rendimiento, seguridad, accesibilidad, disponibilidad).
-- "dataTables": Array de objetos { "name": "nombre_tabla", "description": "...", "columns": [{ "name": "...", "type": "...", "notes": "..." (opcional) }] }. SÓLO si el desarrollo requiere persistir datos NUEVOS (tablas que no existen ya en el stack del cliente). Si no aplica (p. ej. es un cambio visual, de copy, o usa datos ya existentes), usa un array vacío []. Máximo 6 tablas, máximo 8 columnas por tabla.
+- "dataTables": Array de objetos { "name": "nombre_tabla", "description": "...", "columns": [{ "name": "...", "type": "...", "notes": "..." (opcional) }] }. Aquí van TODAS las entidades/tablas NUEVAS que el desarrollo necesita persistir, con sus columnas. Dejar este array vacío [] sólo se justifica si el desarrollo no requiere ninguna tabla nueva (cambio visual, de copy, o reutiliza datos existentes al 100%, ver "dataModel"). Máximo 6 tablas, máximo 8 columnas por tabla.
 - "flowDiagram": String en sintaxis Mermaid con el flujo principal del proceso o funcionalidad, SOLO cuando aporte valor visual real (varios pasos, decisiones, o roles distintos interactuando). Si no aplica (cambio simple, sin flujo que valga la pena diagramar), usa una cadena vacía "".
   Reglas ESTRICTAS del diagrama, para que sea válido y renderice sin errores:
   - Empieza siempre con "flowchart TD".
@@ -660,12 +661,15 @@ function normalizeFlowDiagram(value: unknown, warnings: string[]): string | unde
 
 // Campos array cuya ausencia merece un aviso al revisor (los más importantes de
 // un PRD/TRD). Se comprueban sobre la salida cruda del modelo.
+// "dataModel" queda fuera a propósito: ahora es sólo para datos existentes
+// reutilizados, así que vacío es el resultado correcto en la mayoría de los
+// tickets (los datos nuevos van en "dataTables", que tiene su propio aviso
+// específico más arriba cuando hace falta).
 const REVIEWABLE_ARRAY_FIELDS: { key: keyof DevelopmentSpec; label: string }[] = [
   { key: 'successMetrics', label: 'métricas de éxito' },
   { key: 'assumptions', label: 'supuestos' },
   { key: 'risks', label: 'riesgos' },
   { key: 'components', label: 'componentes técnicos' },
-  { key: 'dataModel', label: 'modelo de datos' },
   { key: 'integrations', label: 'integraciones' },
   { key: 'nonFunctional', label: 'requisitos no funcionales' },
 ];
@@ -680,7 +684,16 @@ function validateDevelopmentSpec(
   const modules = normalizeModules(spec.modules, warnings);
   const requirements = normalizeRequirements(spec.functionalRequirements);
   const dataTables = normalizeDataTables(spec.dataTables);
+  const dataModel = toStringArray(spec.dataModel);
   const flowDiagram = normalizeFlowDiagram(spec.flowDiagram, warnings);
+
+  // Red de seguridad: "dataModel" y "dataTables" deberían ser excluyentes
+  // (ver prompt), pero el modelo a veces describe una entidad en texto libre
+  // y no la estructura como tabla. No podemos saber con certeza si de verdad
+  // haría falta una tabla nueva, así que avisamos para que el revisor lo mire.
+  if (dataModel.length > 0 && dataTables.length === 0) {
+    warnings.push('La IA describió datos en texto ("Modelo de datos") pero no generó tablas estructuradas; revisa si el desarrollo necesita tablas nuevas.');
+  }
 
   // C1: en vez de vaciar en silencio, señalamos lo que la IA no aportó para que
   // el revisor sepa qué completar.
@@ -719,7 +732,7 @@ function validateDevelopmentSpec(
     risks: toStringArray(spec.risks),
     architecture: toText(spec.architecture, 'Arquitectura pendiente de definir.'),
     components: toStringArray(spec.components),
-    dataModel: toStringArray(spec.dataModel),
+    dataModel,
     integrations: toStringArray(spec.integrations),
     nonFunctional: toStringArray(spec.nonFunctional),
     dataTables: dataTables.length > 0 ? dataTables : undefined,
