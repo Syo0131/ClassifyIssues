@@ -1,12 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { TriangleAlert } from 'lucide-react';
-import { Budget, DevDataTable, DevelopmentSpec, RequirementPriority } from '@/lib/types';
+import { KeyRound, TriangleAlert } from 'lucide-react';
+import { Budget, DevDataTable, DevTableColumn, DevelopmentSpec, RequirementPriority } from '@/lib/types';
 import { formatMoney } from '@/lib/budget';
 import { collapseBlankLines } from '@/lib/chat';
 import DownloadPdfMenu from './DownloadPdfMenu';
 import MermaidDiagram from './MermaidDiagram';
+
+/** "varchar(255)", "numeric(10,2)", o el tipo tal cual si no lleva detalle. */
+function formatColumnType(col: DevTableColumn): string {
+  return col.typeDetail ? `${col.type}(${col.typeDetail})` : col.type;
+}
 
 const PRIORITY_LABEL: Record<RequirementPriority, string> = {
   must: 'Imprescindible',
@@ -71,20 +76,34 @@ function DataTablesView({ tables }: { tables: DevDataTable[] }) {
                 <tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
                   <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>Columna</th>
                   <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>Tipo</th>
-                  <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>Notas</th>
+                  <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>Nulo</th>
+                  <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>Relación / Notas</th>
                 </tr>
               </thead>
               <tbody>
                 {table.columns.map(col => (
                   <tr key={col.name}>
-                    <td style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                      {col.name}
+                    <td style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                        {col.primaryKey && (
+                          <KeyRound size={12} strokeWidth={2} color="var(--warning)" aria-label="Clave primaria" />
+                        )}
+                        {col.name}
+                      </span>
                     </td>
-                    <td style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
-                      {col.type}
+                    <td style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                      {formatColumnType(col)}
+                    </td>
+                    <td style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                      {col.nullable ? 'Sí' : 'No'}
                     </td>
                     <td style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
-                      {col.notes || '—'}
+                      {col.references && (
+                        <span style={{ color: 'var(--primary)', fontFamily: 'monospace', fontSize: '0.8rem', marginRight: col.notes ? '0.5rem' : 0 }}>
+                          → {col.references.table}.{col.references.column}
+                        </span>
+                      )}
+                      {col.notes || (!col.references && '—')}
                     </td>
                   </tr>
                 ))}

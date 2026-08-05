@@ -8,6 +8,7 @@ import {
   DevTableColumn,
   DevelopmentBrief,
   DevelopmentSpec,
+  PgColumnType,
   RequirementPriority,
 } from './types';
 
@@ -75,7 +76,14 @@ Campos del JSON:
   - "dataModel": Array de notas breves SOLO sobre datos YA EXISTENTES que este desarrollo reutiliza sin cambios (p. ej. "Reutiliza la tabla de usuarios existente del cliente"). Si no hay nada que reutilizar, usa un array vacío [].
 - "integrations": Array de sistemas externos o APIs necesarios.
 - "nonFunctional": Array de requisitos no funcionales (rendimiento, seguridad, accesibilidad, disponibilidad).
-- "dataTables": Array de objetos { "name": "nombre_tabla", "description": "...", "columns": [{ "name": "...", "type": "...", "notes": "..." (opcional) }] }. Aquí van TODAS las entidades/tablas NUEVAS que el desarrollo necesita persistir, con sus columnas. Dejar este array vacío [] sólo se justifica si el desarrollo no requiere ninguna tabla nueva (cambio visual, de copy, o reutiliza datos existentes al 100%, ver "dataModel"). Máximo 6 tablas, máximo 8 columnas por tabla.
+- "dataTables": Array de objetos { "name": "nombre_tabla", "description": "...", "columns": [...] }. Aquí van TODAS las entidades/tablas NUEVAS que el desarrollo necesita persistir. Dejar este array vacío [] sólo se justifica si el desarrollo no requiere ninguna tabla nueva (cambio visual, de copy, o reutiliza datos existentes al 100%, ver "dataModel"). Máximo 6 tablas, máximo 8 columnas por tabla.
+  Cada columna es un objeto: { "name": "...", "type": "...", "typeDetail": "..." (opcional), "primaryKey": boolean, "nullable": boolean, "references": {"table":"...","column":"..."} (SOLO si es clave foránea), "notes": "..." (opcional) }.
+  Reglas ESTRICTAS de columnas, para que el esquema sea preciso y comparable entre tablas:
+  - "type" SOLO puede ser uno de: uuid, text, varchar, integer, bigint, numeric, boolean, timestamptz, date, jsonb. No inventes otros (nada de "string", "int", "float", "datetime"...).
+  - "typeDetail": longitud para varchar (ej. "255"), o "precision,scale" para numeric (ej. "10,2"). Omite typeDetail para el resto de tipos.
+  - Cada tabla debe tener EXACTAMENTE UNA columna con "primaryKey": true, normalmente "id" de tipo "uuid". El resto de columnas llevan "primaryKey": false.
+  - "nullable": false para la clave primaria y para cualquier columna obligatoria de negocio; true para campos opcionales.
+  - Si una columna referencia a otra tabla (clave foránea, ej. "user_id"), su "type" debe ser "uuid" y debe llevar SIEMPRE "references": {"table": "nombre_de_la_tabla_referenciada", "column": "id"} — nunca dejes una columna con pinta de FK (termina en "_id", no es la propia clave primaria) sin "references". La tabla referenciada puede ser una de las que tú mismo declares en "dataTables", o una tabla existente del cliente (ej. "users"); en ese último caso añade también en "notes" de esa columna una nota tipo "FK a tabla existente del cliente".
 - "flowDiagram": String en sintaxis Mermaid con el flujo principal del proceso o funcionalidad, SOLO cuando aporte valor visual real (varios pasos, decisiones, o roles distintos interactuando). Si no aplica (cambio simple, sin flujo que valga la pena diagramar), usa una cadena vacía "".
   Reglas ESTRICTAS del diagrama, para que sea válido y renderice sin errores:
   - Empieza siempre con "flowchart TD".
@@ -595,16 +603,80 @@ function fallbackModules(): DevModule[] {
   ];
 }
 
+const PG_COLUMN_TYPES: readonly PgColumnType[] = [
+  'uuid', 'text', 'varchar', 'integer', 'bigint', 'numeric', 'boolean', 'timestamptz', 'date', 'jsonb',
+];
+
+// Sinónimos habituales que el modelo usa pese a las instrucciones, mapeados al
+// vocabulario cerrado. Claves en minúsculas, sin espacios sobrantes.
+const TYPE_SYNONYMS: Record<string, PgColumnType> = {
+  string: 'varchar', str: 'varchar', char: 'varchar', varchar2: 'varchar',
+  int: 'integer', int4: 'integer', smallint: 'integer',
+  int8: 'bigint', long: 'bigint',
+  float: 'numeric', double: 'numeric', decimal: 'numeric', money: 'numeric', real: 'numeric',
+  bool: 'boolean',
+  timestamp: 'timestamptz', datetime: 'timestamptz',
+  json: 'jsonb',
+  guid: 'uuid',
+};
+
+/**
+ * Reduce cualquier tipo que devuelva la IA a nuestro vocabulario cerrado de
+ * tipos Postgres (nunca deja pasar texto libre: lo que no reconoce cae a
+ * "text"), y separa el detalle de longitud/precisión aunque haya venido
+ * pegado al nombre del tipo (p. ej. "varchar(255)" en vez de "typeDetail").
+ */
+function normalizeColumnType(rawType: unknown, rawDetail: unknown): { type: PgColumnType; typeDetail?: string } {
+  const raw = typeof rawType === 'string' ? rawType.trim().toLowerCase() : '';
+  const match = raw.match(/^([a-z0-9]+)\s*(?:\(([^)]*)\))?$/);
+  const base = match?.[1] ?? raw;
+  const inlineDetail = match?.[2]?.trim();
+
+  const canonical: PgColumnType = (PG_COLUMN_TYPES as string[]).includes(base)
+    ? (base as PgColumnType)
+    : TYPE_SYNONYMS[base] ?? 'text';
+
+  const detailSource = inlineDetail || (typeof rawDetail === 'string' ? rawDetail.trim() : '');
+
+  if (canonical === 'varchar') {
+    const length = Number.parseInt(detailSource, 10);
+    return { type: 'varchar', typeDetail: Number.isFinite(length) && length > 0 ? String(Math.min(length, 2000)) : '255' };
+  }
+  if (canonical === 'numeric') {
+    const [precisionRaw, scaleRaw] = detailSource.split(',').map(s => Number.parseInt(s.trim(), 10));
+    const precision = Number.isFinite(precisionRaw) && precisionRaw > 0 ? Math.min(precisionRaw, 38) : 10;
+    const scale = Number.isFinite(scaleRaw) && scaleRaw >= 0 ? Math.min(scaleRaw, precision) : 2;
+    return { type: 'numeric', typeDetail: `${precision},${scale}` };
+  }
+  return { type: canonical };
+}
+
+function normalizeReference(value: unknown): { table: string; column: string } | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as Record<string, unknown>;
+  const table = toText(raw.table, '');
+  if (!table) return undefined;
+  return { table, column: toText(raw.column, 'id') };
+}
+
 function normalizeTableColumns(value: unknown): DevTableColumn[] {
   if (!Array.isArray(value)) return [];
   return value
     .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
     .slice(0, 8)
     .map(item => {
+      const { type, typeDetail } = normalizeColumnType(item.type, item.typeDetail);
+      const primaryKey = item.primaryKey === true;
       const notes = toText(item.notes, '');
+      const references = normalizeReference(item.references);
       return {
         name: toText(item.name, ''),
-        type: toText(item.type, 'text'),
+        type,
+        ...(typeDetail ? { typeDetail } : {}),
+        primaryKey,
+        // Una PK nunca es nullable, sea lo que sea que haya dicho el modelo.
+        nullable: primaryKey ? false : item.nullable !== false,
+        ...(references ? { references } : {}),
         ...(notes ? { notes } : {}),
       };
     })
@@ -612,13 +684,52 @@ function normalizeTableColumns(value: unknown): DevTableColumn[] {
 }
 
 /**
+ * Comprueba las FK que apuntan a una tabla declarada en este mismo esquema:
+ * si la tabla existe pero la columna referenciada no, es casi seguro una
+ * alucinación (el modelo inventó un nombre de columna) — se retira la
+ * referencia rota y se avisa. Las referencias a tablas que NO están en este
+ * esquema (p. ej. una tabla existente del cliente, vía "dataModel") no se
+ * pueden verificar contra nada y se dejan tal cual.
+ */
+function validateTableReferences(tables: DevDataTable[], warnings: string[]): void {
+  const byName = new Map(tables.map(t => [t.name.toLowerCase(), t]));
+  for (const table of tables) {
+    for (const column of table.columns) {
+      if (!column.references) continue;
+      const target = byName.get(column.references.table.toLowerCase());
+      if (!target) continue; // Tabla externa/existente: no verificable.
+      const columnExists = target.columns.some(
+        c => c.name.toLowerCase() === column.references!.column.toLowerCase()
+      );
+      if (!columnExists) {
+        warnings.push(
+          `"${table.name}.${column.name}" referencia a "${column.references.table}.${column.references.column}", que no existe en el esquema generado; revisa esa relación.`
+        );
+        delete column.references;
+      }
+    }
+  }
+}
+
+function ensurePrimaryKeys(tables: DevDataTable[], warnings: string[]): void {
+  for (const table of tables) {
+    const pkCount = table.columns.filter(c => c.primaryKey).length;
+    if (pkCount === 0) {
+      warnings.push(`La tabla "${table.name}" no tiene clave primaria declarada; revísala.`);
+    } else if (pkCount > 1) {
+      warnings.push(`La tabla "${table.name}" declara más de una clave primaria; revísala.`);
+    }
+  }
+}
+
+/**
  * Tablas nuevas que el desarrollo necesitaría, si aplica. No es obligatorio
  * que la IA aporte esto — muchos tickets no requieren datos nuevos — así que
  * un resultado vacío no genera aviso, a diferencia de los demás campos.
  */
-function normalizeDataTables(value: unknown): DevDataTable[] {
+function normalizeDataTables(value: unknown, warnings: string[]): DevDataTable[] {
   if (!Array.isArray(value)) return [];
-  return value
+  const tables = value
     .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
     .slice(0, 6)
     .map((item, index) => ({
@@ -628,6 +739,11 @@ function normalizeDataTables(value: unknown): DevDataTable[] {
     }))
     // Una tabla sin columnas válidas no aporta nada; se descarta en silencio.
     .filter(table => table.columns.length > 0);
+
+  validateTableReferences(tables, warnings);
+  ensurePrimaryKeys(tables, warnings);
+
+  return tables;
 }
 
 /**
@@ -683,7 +799,7 @@ function validateDevelopmentSpec(
   const warnings = [...extraWarnings];
   const modules = normalizeModules(spec.modules, warnings);
   const requirements = normalizeRequirements(spec.functionalRequirements);
-  const dataTables = normalizeDataTables(spec.dataTables);
+  const dataTables = normalizeDataTables(spec.dataTables, warnings);
   const dataModel = toStringArray(spec.dataModel);
   const flowDiagram = normalizeFlowDiagram(spec.flowDiagram, warnings);
 

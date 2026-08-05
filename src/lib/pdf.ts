@@ -276,8 +276,9 @@ function drawTableRow(doc: Doc, cells: string[], opts: { header?: boolean; bold?
 // todo es texto y "Notas" necesita envolver a varias líneas.
 
 function drawDataTables(doc: Doc, tables: DevDataTable[]): void {
-  const col1 = MARGIN + CONTENT_WIDTH * 0.28;
-  const col2 = MARGIN + CONTENT_WIDTH * 0.46;
+  const col1 = MARGIN + CONTENT_WIDTH * 0.26;
+  const col2 = MARGIN + CONTENT_WIDTH * 0.42;
+  const col3 = MARGIN + CONTENT_WIDTH * 0.53;
 
   for (const table of tables) {
     drawParagraph(doc, table.name, { font: doc.bold, size: 10.5, gap: table.description ? 2 : 6 });
@@ -286,9 +287,9 @@ function drawDataTables(doc: Doc, tables: DevDataTable[]): void {
     }
 
     ensureSpace(doc, 20);
-    ['Columna', 'Tipo', 'Notas'].forEach((label, i) => {
+    ['Columna', 'Tipo', 'Nulo', 'Relacion / Notas'].forEach((label, i) => {
       doc.page.drawText(label, {
-        x: [MARGIN, col1, col2][i],
+        x: [MARGIN, col1, col2, col3][i],
         y: doc.y - 9,
         size: 8,
         font: doc.bold,
@@ -305,15 +306,24 @@ function drawDataTables(doc: Doc, tables: DevDataTable[]): void {
     doc.y -= 6;
 
     for (const column of table.columns) {
-      const nameLines = wrapText(column.name, doc.regular, 9, col1 - MARGIN - 6);
-      const typeLines = wrapText(column.type, doc.regular, 9, col2 - col1 - 6);
-      const notesLines = wrapText(column.notes || '-', doc.regular, 9, MARGIN + CONTENT_WIDTH - col2);
-      const rowLines = Math.max(nameLines.length, typeLines.length, notesLines.length, 1);
+      const nameText = column.primaryKey ? `${column.name} (PK)` : column.name;
+      const typeText = column.typeDetail ? `${column.type}(${column.typeDetail})` : column.type;
+      const nullText = column.nullable ? 'Si' : 'No';
+      const relNotesParts: string[] = [];
+      if (column.references) relNotesParts.push(`-> ${column.references.table}.${column.references.column}`);
+      if (column.notes) relNotesParts.push(column.notes);
+      const relNotesText = relNotesParts.join('  |  ') || '-';
+
+      const nameLines = wrapText(nameText, doc.regular, 9, col1 - MARGIN - 6);
+      const typeLines = wrapText(typeText, doc.regular, 9, col2 - col1 - 6);
+      const nullLines = wrapText(nullText, doc.regular, 9, col3 - col2 - 6);
+      const notesLines = wrapText(relNotesText, doc.regular, 9, MARGIN + CONTENT_WIDTH - col3);
+      const rowLines = Math.max(nameLines.length, typeLines.length, nullLines.length, notesLines.length, 1);
       ensureSpace(doc, rowLines * 12 + 4);
 
       const top = doc.y - 9;
-      [nameLines, typeLines, notesLines].forEach((lines, colIndex) => {
-        const x = [MARGIN, col1, col2][colIndex];
+      [nameLines, typeLines, nullLines, notesLines].forEach((lines, colIndex) => {
+        const x = [MARGIN, col1, col2, col3][colIndex];
         const color = colIndex === 0 ? COLOR_TEXT : COLOR_MUTED;
         lines.forEach((line, i) => {
           doc.page.drawText(sanitize(line), { x, y: top - i * 12, size: 9, font: doc.regular, color });

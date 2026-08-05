@@ -50,9 +50,33 @@ export interface DevModule {
   hoursMax: number;
 }
 
+/**
+ * Vocabulario cerrado de tipos Postgres. La IA debe elegir de esta lista (se
+ * lo pedimos explícitamente en el prompt); lo que no encaje se canonicaliza o
+ * cae a "text" en `normalizeColumnType` (ai.ts), nunca se deja como texto
+ * libre — es lo que hace que el esquema sea comparable entre tablas.
+ */
+export type PgColumnType =
+  | 'uuid'
+  | 'text'
+  | 'varchar'
+  | 'integer'
+  | 'bigint'
+  | 'numeric'
+  | 'boolean'
+  | 'timestamptz'
+  | 'date'
+  | 'jsonb';
+
 export interface DevTableColumn {
   name: string;
-  type: string;
+  type: PgColumnType;
+  /** Precisión: longitud para varchar, "precision,scale" para numeric. */
+  typeDetail?: string;
+  primaryKey: boolean;
+  nullable: boolean;
+  /** Presente sólo en columnas de clave foránea. */
+  references?: { table: string; column: string };
   notes?: string;
 }
 
