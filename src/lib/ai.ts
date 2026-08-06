@@ -59,7 +59,7 @@ Guía de ESTIMACIÓN (órdenes de magnitud orientativos para trabajo de desarrol
 - La dispersión debe reflejar incertidumbre real: hoursMax suele ser >= 1.3x hoursMin, más ancho cuanto menos claro esté el módulo. NO devuelvas hoursMin = hoursLikely = hoursMax salvo tareas triviales y muy conocidas.
 - "complexity" según el TOTAL de hoursLikely: "low" si < 40 h, "medium" si 40-120 h, "high" si > 120 h.
 
-Campos del JSON:
+Campos del JSON (lista COMPLETA — el objeto debe tener las 18 claves, aunque algunas queden en array vacío o cadena vacía):
 - "title": Título corto del proyecto.
 - "problem": Problema o necesidad de negocio, en 2-3 frases.
 - "goal": Objetivo medible del proyecto, en 1-2 frases.
@@ -69,31 +69,36 @@ Campos del JSON:
 - "functionalRequirements": Array de objetos { "id": "RF-01", "title": "...", "description": "...", "priority": "must"|"should"|"could" }.
 - "successMetrics": Array de métricas para saber si funcionó.
 - "assumptions": Array de supuestos asumidos.
-- "risks": Array de riesgos con su posible mitigación.
+- "risks": Array de riesgos con su posible mitigación. SIEMPRE al menos 1, entre 1 y 5 — todo desarrollo tiene alguno (complejidad técnica, dependencia de terceros/pasarelas, plazos ajustados, adopción por los usuarios, seguridad de los datos, alcance poco definido...). No lo dejes vacío salvo un cambio trivial de una línea.
 - "architecture": Párrafo describiendo la solución técnica propuesta y el stack.
 - "components": Array de componentes/servicios a construir o modificar.
-- "dataModel" y "dataTables" son EXCLUYENTES: no describas la misma entidad en los dos. En cuanto identifiques una entidad de datos NUEVA (Usuario, Pedido, Producto, etc., aunque sea obvia o mencionada de pasada), va SIEMPRE en "dataTables" como tabla estructurada — NUNCA sólo como texto en "dataModel". No dejar la aportación en texto libre y omitir la estructurada es un error.
-  - "dataModel": Array de notas breves SOLO sobre datos YA EXISTENTES que este desarrollo reutiliza sin cambios (p. ej. "Reutiliza la tabla de usuarios existente del cliente"). Si no hay nada que reutilizar, usa un array vacío [].
+- "dataModel": Array de notas breves SOLO sobre datos YA EXISTENTES que este desarrollo reutiliza sin cambios (ver reglas abajo). Si no hay nada que reutilizar, usa [].
+- "dataTables": Array de tablas NUEVAS que el desarrollo necesita persistir, con sus columnas (ver reglas abajo). Si no aplica, usa [].
 - "integrations": Array de sistemas externos o APIs necesarios.
 - "nonFunctional": Array de requisitos no funcionales (rendimiento, seguridad, accesibilidad, disponibilidad).
-- "dataTables": Array de objetos { "name": "nombre_tabla", "description": "...", "columns": [...] }. Aquí van TODAS las entidades/tablas NUEVAS que el desarrollo necesita persistir. Dejar este array vacío [] sólo se justifica si el desarrollo no requiere ninguna tabla nueva (cambio visual, de copy, o reutiliza datos existentes al 100%, ver "dataModel"). Máximo 6 tablas, máximo 8 columnas por tabla.
-  Cada columna es un objeto: { "name": "...", "type": "...", "typeDetail": "..." (opcional), "primaryKey": boolean, "nullable": boolean, "references": {"table":"...","column":"..."} (SOLO si es clave foránea), "notes": "..." (opcional) }.
-  Reglas ESTRICTAS de columnas, para que el esquema sea preciso y comparable entre tablas:
-  - "type" SOLO puede ser uno de: uuid, text, varchar, integer, bigint, numeric, boolean, timestamptz, date, jsonb. No inventes otros (nada de "string", "int", "float", "datetime"...).
-  - "typeDetail": longitud para varchar (ej. "255"), o "precision,scale" para numeric (ej. "10,2"). Omite typeDetail para el resto de tipos.
-  - Cada tabla debe tener EXACTAMENTE UNA columna con "primaryKey": true, normalmente "id" de tipo "uuid". El resto de columnas llevan "primaryKey": false.
-  - "nullable": false para la clave primaria y para cualquier columna obligatoria de negocio; true para campos opcionales.
-  - Si una columna referencia a otra tabla (clave foránea, ej. "user_id"), su "type" debe ser "uuid" y debe llevar SIEMPRE "references": {"table": "nombre_de_la_tabla_referenciada", "column": "id"} — nunca dejes una columna con pinta de FK (termina en "_id", no es la propia clave primaria) sin "references". La tabla referenciada puede ser una de las que tú mismo declares en "dataTables", o una tabla existente del cliente (ej. "users"); en ese último caso añade también en "notes" de esa columna una nota tipo "FK a tabla existente del cliente".
-- "flowDiagram": String en sintaxis Mermaid con el flujo principal del proceso o funcionalidad, SOLO cuando aporte valor visual real (varios pasos, decisiones, o roles distintos interactuando). Si no aplica (cambio simple, sin flujo que valga la pena diagramar), usa una cadena vacía "".
-  Reglas ESTRICTAS del diagrama, para que sea válido y renderice sin errores:
-  - Empieza siempre con "flowchart TD".
-  - IDs de nodo cortos y alfanuméricos sin espacios: A, B, C, Paso1...
-  - Etiquetas entre corchetes para pasos: A[Texto del paso]. Entre llaves para decisiones: B{¿Condición?}.
-  - Conecta con flechas simples: A --> B  o  B -->|Si| C  o  B -->|No| D.
-  - Dentro de las etiquetas NUNCA uses comillas, corchetes, llaves, pipes "|" ni punto y coma — sólo texto plano corto.
-  - Sin subgraphs, sin estilos, sin comentarios. Máximo 10 nodos.
+- "flowDiagram": String en sintaxis Mermaid con el flujo principal, si aporta valor visual (ver reglas abajo). Si no aplica, usa "".
+- "modules": Array de objetos { "name": "...", "description": "...", "hoursMin": n, "hoursLikely": n, "hoursMax": n }. La estimación de esfuerzo del proyecto — ver "Guía de ESTIMACIÓN" arriba. Este campo es TAN OBLIGATORIO como los demás; no lo omitas.
 - "complexity": "low" | "medium" | "high".
 - "openQuestions": Array de preguntas abiertas para el cliente.
+
+Reglas detalladas de "dataModel" / "dataTables" (son EXCLUYENTES: no describas la misma entidad en los dos):
+- En cuanto identifiques una entidad de datos NUEVA (Usuario, Pedido, Producto, etc., aunque sea obvia o mencionada de pasada), va SIEMPRE en "dataTables" como tabla estructurada — NUNCA sólo como texto en "dataModel". No dejar la aportación en texto libre y omitir la estructurada es un error.
+- "dataModel" es sólo para datos existentes reutilizados (p. ej. "Reutiliza la tabla de usuarios existente del cliente").
+- Cada tabla en "dataTables" es un objeto: { "name": "nombre_tabla", "description": "...", "columns": [...] }. Máximo 6 tablas, máximo 8 columnas por tabla.
+- Cada columna es un objeto: { "name": "...", "type": "...", "typeDetail": "..." (opcional), "primaryKey": boolean, "nullable": boolean, "references": {"table":"...","column":"..."} (SOLO si es clave foránea), "notes": "..." (opcional) }.
+- "type" SOLO puede ser uno de: uuid, text, varchar, integer, bigint, numeric, boolean, timestamptz, date, jsonb. No inventes otros (nada de "string", "int", "float", "datetime"...).
+- "typeDetail": longitud para varchar (ej. "255"), o "precision,scale" para numeric (ej. "10,2"). Omite typeDetail para el resto de tipos.
+- Cada tabla debe tener EXACTAMENTE UNA columna con "primaryKey": true, normalmente "id" de tipo "uuid". El resto de columnas llevan "primaryKey": false.
+- "nullable": false para la clave primaria y para cualquier columna obligatoria de negocio; true para campos opcionales.
+- Si una columna referencia a otra tabla (clave foránea, ej. "user_id"), su "type" debe ser "uuid" y debe llevar SIEMPRE "references": {"table": "nombre_de_la_tabla_referenciada", "column": "id"} — nunca dejes una columna con pinta de FK (termina en "_id", no es la propia clave primaria) sin "references". La tabla referenciada puede ser una de las que tú mismo declares en "dataTables", o una tabla existente del cliente (ej. "users"); en ese último caso añade también en "notes" de esa columna una nota tipo "FK a tabla existente del cliente".
+
+Reglas detalladas de "flowDiagram" (Mermaid), para que sea válido y renderice sin errores:
+- Empieza siempre con "flowchart TD".
+- IDs de nodo cortos y alfanuméricos sin espacios: A, B, C, Paso1...
+- Etiquetas entre corchetes para pasos: A[Texto del paso]. Entre llaves para decisiones: B{¿Condición?}.
+- Conecta con flechas simples: A --> B  o  B -->|Si| C  o  B -->|No| D.
+- Dentro de las etiquetas NUNCA uses comillas, corchetes, llaves, pipes "|" ni punto y coma — sólo texto plano corto.
+- Sin subgraphs, sin estilos, sin comentarios. Máximo 10 nodos.
 
 Responde SOLO con JSON válido en ESPAÑOL.`;
 
@@ -542,6 +547,32 @@ function toText(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
+/**
+ * "risks" es el único campo de texto libre cuya propia descripción invita a
+ * una forma de dos partes ("riesgos CON su mitigación"), y el modelo a veces
+ * la toma al pie de la letra devolviendo { description, mitigation } en vez
+ * de strings. toStringArray() descartaría esos objetos en silencio, dejando
+ * el array vacío pese a que el modelo sí aportó riesgos reales. Aceptamos
+ * ambas formas.
+ */
+function normalizeRisks(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(item => {
+      if (typeof item === 'string') return item.trim();
+      if (item && typeof item === 'object') {
+        const obj = item as Record<string, unknown>;
+        const description = toText(obj.description ?? obj.risk ?? obj.name, '');
+        const mitigation = toText(obj.mitigation ?? obj.solution, '');
+        if (!description) return '';
+        return mitigation ? `${description} — Mitigación: ${mitigation}` : description;
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .slice(0, 20);
+}
+
 function normalizeRequirements(value: unknown): DevRequirement[] {
   const validPriorities: RequirementPriority[] = ['must', 'should', 'could'];
   if (!Array.isArray(value)) return [];
@@ -781,10 +812,12 @@ function normalizeFlowDiagram(value: unknown, warnings: string[]): string | unde
 // reutilizados, así que vacío es el resultado correcto en la mayoría de los
 // tickets (los datos nuevos van en "dataTables", que tiene su propio aviso
 // específico más arriba cuando hace falta).
+// "risks" también queda fuera: usa `normalizeRisks()`, no `toStringArray()`
+// (acepta objetos {description, mitigation}), así que su aviso de ausencia se
+// calcula aparte, sobre el valor ya normalizado.
 const REVIEWABLE_ARRAY_FIELDS: { key: keyof DevelopmentSpec; label: string }[] = [
   { key: 'successMetrics', label: 'métricas de éxito' },
   { key: 'assumptions', label: 'supuestos' },
-  { key: 'risks', label: 'riesgos' },
   { key: 'components', label: 'componentes técnicos' },
   { key: 'integrations', label: 'integraciones' },
   { key: 'nonFunctional', label: 'requisitos no funcionales' },
@@ -801,6 +834,7 @@ function validateDevelopmentSpec(
   const requirements = normalizeRequirements(spec.functionalRequirements);
   const dataTables = normalizeDataTables(spec.dataTables, warnings);
   const dataModel = toStringArray(spec.dataModel);
+  const risks = normalizeRisks(spec.risks);
   const flowDiagram = normalizeFlowDiagram(spec.flowDiagram, warnings);
 
   // Red de seguridad: "dataModel" y "dataTables" deberían ser excluyentes
@@ -809,6 +843,9 @@ function validateDevelopmentSpec(
   // haría falta una tabla nueva, así que avisamos para que el revisor lo mire.
   if (dataModel.length > 0 && dataTables.length === 0) {
     warnings.push('La IA describió datos en texto ("Modelo de datos") pero no generó tablas estructuradas; revisa si el desarrollo necesita tablas nuevas.');
+  }
+  if (risks.length === 0) {
+    warnings.push('La IA no aportó riesgos; complétalo en la revisión.');
   }
 
   // C1: en vez de vaciar en silencio, señalamos lo que la IA no aportó para que
@@ -845,7 +882,7 @@ function validateDevelopmentSpec(
           ],
     successMetrics: toStringArray(spec.successMetrics),
     assumptions: toStringArray(spec.assumptions),
-    risks: toStringArray(spec.risks),
+    risks,
     architecture: toText(spec.architecture, 'Arquitectura pendiente de definir.'),
     components: toStringArray(spec.components),
     dataModel,
