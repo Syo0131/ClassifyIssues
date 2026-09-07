@@ -14,6 +14,11 @@ import { AnalysisResult, DevelopmentBrief } from './types';
  * proceso Node de larga vida (output: 'standalone'); no sobreviviría a un
  * reinicio a mitad de análisis, en cuyo caso el ticket quedaría pendiente
  * (spec NULL) — ver runbook en CLAUDE.md para reprocesarlo.
+ *
+ * `analyzeDevelopmentRequest` hace hasta DOS llamadas a Gemini: la generación
+ * del borrador y una segunda pasada de revisión (`critiqueDevelopmentSpec`), lo
+ * que alarga el tiempo total a ~30-40 s. `DEV_CRITIQUE_PASS=off` desactiva la
+ * segunda.
  */
 
 /** Análisis provisional mientras se genera el PRD/TRD real. */

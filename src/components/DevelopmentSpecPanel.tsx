@@ -226,6 +226,18 @@ export default function DevelopmentSpecPanel({
                         {requirement.description}
                       </p>
                     )}
+                    {requirement.acceptanceCriteria?.length > 0 && (
+                      <div style={{ marginTop: '0.5rem' }}>
+                        <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                          Criterios de aceptación
+                        </div>
+                        <ul style={{ margin: 0, paddingLeft: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.82rem', lineHeight: 1.5, color: 'var(--text-secondary)' }}>
+                          {requirement.acceptanceCriteria.map((c, i) => (
+                            <li key={i}>{c}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -271,25 +283,46 @@ export default function DevelopmentSpecPanel({
 
         {tab === 'budget' && budget && (
           <>
+            {(() => {
+              const conf = { low: 'Baja', medium: 'Media', high: 'Alta' }[budget.estimateConfidence];
+              return (
+                <div style={{ display: 'inline-block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)', borderRadius: '999px', padding: '0.2rem 0.7rem', marginBottom: '1rem' }}>
+                  Fiabilidad de la estimación: {conf}
+                </div>
+              );
+            })()}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
               <div style={{ border: '1px solid var(--border-subtle)', borderRadius: '10px', padding: '1rem' }}>
                 <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '0.35rem' }}>
-                  Total estimado
+                  Valor esperado (PERT)
                 </div>
                 <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {formatMoney(budget.total.likely, budget.currency)}
+                  {formatMoney(budget.total.expected, budget.currency)}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                  {formatMoney(budget.total.min, budget.currency)} – {formatMoney(budget.total.max, budget.currency)}
+                  {Math.round(budget.hours.expected)} h · rango {formatMoney(budget.total.min, budget.currency)} – {formatMoney(budget.total.max, budget.currency)}
                 </div>
               </div>
               <div style={{ border: '1px solid var(--border-subtle)', borderRadius: '10px', padding: '1rem' }}>
                 <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '0.35rem' }}>
-                  Esfuerzo
+                  P{budget.quotePercentile} (conservador)
                 </div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>{budget.hours.likely} h</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  {formatMoney(budget.total.p80, budget.currency)}
+                </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                  {budget.hours.min} – {budget.hours.max} h
+                  {Math.round(budget.hours.p80)} h · cifra recomendada para cotizar
+                </div>
+              </div>
+              <div style={{ border: '1px solid var(--border-subtle)', borderRadius: '10px', padding: '1rem' }}>
+                <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '0.35rem' }}>
+                  Calendario
+                </div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  {budget.timeline.weeksExpected}–{budget.timeline.weeksP80} sem.
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                  {budget.timeline.teamSize} pers. · {budget.timeline.hoursPerWeek} h/sem
                 </div>
               </div>
               <div style={{ border: '1px solid var(--border-subtle)', borderRadius: '10px', padding: '1rem' }}>
@@ -308,7 +341,7 @@ export default function DevelopmentSpecPanel({
                 <thead>
                   <tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
                     <th style={{ padding: '0.5rem 0.4rem', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)' }}>Módulo</th>
-                    <th style={{ padding: '0.5rem 0.4rem', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)', textAlign: 'right' }}>Horas</th>
+                    <th style={{ padding: '0.5rem 0.4rem', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)', textAlign: 'right' }}>Horas (esperado)</th>
                     <th style={{ padding: '0.5rem 0.4rem', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)', textAlign: 'right' }}>Coste</th>
                   </tr>
                 </thead>
@@ -317,11 +350,11 @@ export default function DevelopmentSpecPanel({
                     <tr key={line.module}>
                       <td style={{ padding: '0.6rem 0.4rem', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}>{line.module}</td>
                       <td style={{ padding: '0.6rem 0.4rem', borderBottom: '1px solid var(--border-subtle)', textAlign: 'right', color: 'var(--text-secondary)' }}>
-                        {line.hoursLikely} h
+                        {Math.round(line.hoursExpected)} h
                         <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}> ({line.hoursMin}–{line.hoursMax})</span>
                       </td>
                       <td style={{ padding: '0.6rem 0.4rem', borderBottom: '1px solid var(--border-subtle)', textAlign: 'right', color: 'var(--text-primary)' }}>
-                        {formatMoney(line.costLikely, budget.currency)}
+                        {formatMoney(line.costExpected, budget.currency)}
                       </td>
                     </tr>
                   ))}
@@ -329,28 +362,70 @@ export default function DevelopmentSpecPanel({
                     <td style={{ padding: '0.6rem 0.4rem', color: 'var(--text-secondary)' }}>Contingencia ({budget.contingencyPct}%)</td>
                     <td />
                     <td style={{ padding: '0.6rem 0.4rem', textAlign: 'right', color: 'var(--text-secondary)' }}>
-                      {formatMoney(budget.contingency.likely, budget.currency)}
+                      {formatMoney(budget.contingency.expected, budget.currency)}
                     </td>
                   </tr>
                   <tr style={{ fontWeight: 700 }}>
-                    <td style={{ padding: '0.6rem 0.4rem', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}>Total</td>
+                    <td style={{ padding: '0.6rem 0.4rem', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}>Total (valor esperado)</td>
                     <td style={{ padding: '0.6rem 0.4rem', borderTop: '1px solid var(--border-subtle)', textAlign: 'right', color: 'var(--text-primary)' }}>
-                      {budget.hours.likely} h
+                      {Math.round(budget.hours.expected)} h
                     </td>
                     <td style={{ padding: '0.6rem 0.4rem', borderTop: '1px solid var(--border-subtle)', textAlign: 'right', color: 'var(--text-primary)' }}>
-                      {formatMoney(budget.total.likely, budget.currency)}
+                      {formatMoney(budget.total.expected, budget.currency)}
+                    </td>
+                  </tr>
+                  <tr style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                    <td style={{ padding: '0.6rem 0.4rem' }}>Total P{budget.quotePercentile} (conservador)</td>
+                    <td style={{ padding: '0.6rem 0.4rem', textAlign: 'right' }}>{Math.round(budget.hours.p80)} h</td>
+                    <td style={{ padding: '0.6rem 0.4rem', textAlign: 'right' }}>
+                      {formatMoney(budget.total.p80, budget.currency)}
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
 
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.75rem 0 0', lineHeight: 1.5 }}>
+              {budget.contingencyRationale}
+            </p>
+
+            {budget.timeline.phases.length > 1 && (
+              <Section title="Fases de entrega">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                  {budget.timeline.phases.map(phase => {
+                    const meta = spec.phases?.find(p => p.number === phase.number);
+                    return (
+                      <div key={phase.number} style={{ border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '0.6rem 0.8rem' }}>
+                        <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Fase {phase.number} · {phase.name}
+                          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> — {phase.hours} h aprox., ~{phase.weeks} sem.</span>
+                        </div>
+                        {meta?.goal && (
+                          <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0', lineHeight: 1.5 }}>{meta.goal}</p>
+                        )}
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
+                          {spec.modules.filter(m => (m.phase ?? 1) === phase.number).map(m => m.name).join(' · ') || 'Sin módulos'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '0.5rem 0 0', lineHeight: 1.5 }}>
+                  Fases secuenciales con {budget.timeline.teamSize} persona(s) a {budget.timeline.hoursPerWeek} h/semana. Con trabajo en paralelo el calendario puede comprimirse.
+                </p>
+              </Section>
+            )}
+
             <Section title="Detalle de módulos">
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.5rem' }}>
                 {spec.modules.map(module => (
-                  <div key={module.name}>
+                  <div key={module.id || module.name}>
                     <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                       {module.name} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>· {module.hoursLikely} h</span>
+                      {module.phase ? <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> · fase {module.phase}</span> : null}
+                      {module.requirementIds?.length ? (
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.78rem' }}> · cubre {module.requirementIds.join(', ')}</span>
+                      ) : null}
                     </div>
                     {module.description && (
                       <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0', lineHeight: 1.5 }}>

@@ -39,15 +39,33 @@ export interface DevRequirement {
   title: string;
   description: string;
   priority: RequirementPriority;
+  /**
+   * Criterios de aceptación verificables (2-4), en lenguaje de negocio. Puede
+   * venir vacío en specs generados antes de esta función o si la IA no lo aportó.
+   */
+  acceptanceCriteria: string[];
 }
 
 /** Bloque de trabajo estimado en horas (estimación de tres puntos). */
 export interface DevModule {
+  /** Identificador estable del módulo (M-01, M-02, ...) para trazabilidad y fases. */
+  id: string;
   name: string;
   description: string;
   hoursMin: number;
   hoursLikely: number;
   hoursMax: number;
+  /** Fase de entrega a la que pertenece el módulo (1 = MVP). */
+  phase: number;
+  /** RF-xx que este módulo contribuye a implementar (trazabilidad). */
+  requirementIds: string[];
+}
+
+/** Una fase de entrega del proyecto (MVP + incrementos posteriores). */
+export interface DevPhase {
+  number: number;
+  name: string;
+  goal: string;
 }
 
 /**
@@ -132,6 +150,11 @@ export interface DevelopmentSpec {
 
   // ── Estimación ──
   modules: DevModule[];
+  /**
+   * Fases de entrega propuestas (fase 1 = MVP usable). `undefined`/vacío en specs
+   * anteriores a esta función; la UI y el PDF caen a "una sola fase" en ese caso.
+   */
+  phases?: DevPhase[];
   complexity: 'low' | 'medium' | 'high';
   openQuestions: string[];
 
@@ -175,25 +198,54 @@ export interface DevelopmentBrief {
   conversation?: ChatMessage[];
 }
 
+/** Cifras de esfuerzo/coste en los cinco puntos que maneja el presupuesto. */
+export interface BudgetFigures {
+  min: number;
+  likely: number;
+  max: number;
+  /** Valor esperado PERT: (min + 4·likely + max) / 6. */
+  expected: number;
+  /** Percentil P80 (o el que fije DEV_QUOTE_PERCENTILE) sobre el total. */
+  p80: number;
+}
+
 export interface BudgetLine {
   module: string;
   hoursMin: number;
   hoursLikely: number;
   hoursMax: number;
+  hoursExpected: number;
   costMin: number;
   costLikely: number;
   costMax: number;
+  costExpected: number;
+}
+
+/** Estimación en calendario derivada de las horas y un supuesto de equipo. */
+export interface BudgetTimeline {
+  teamSize: number;
+  hoursPerWeek: number;
+  weeksExpected: number;
+  weeksP80: number;
+  phases: { number: number; name: string; hours: number; weeks: number }[];
 }
 
 export interface Budget {
   currency: string;
   hourlyRate: number;
   contingencyPct: number;
+  /** Por qué esa contingencia (factores que aplicaron, o "override manual"). */
+  contingencyRationale: string;
+  /** Fiabilidad global de la estimación. */
+  estimateConfidence: 'low' | 'medium' | 'high';
+  /** Percentil usado para la cifra P80 (por defecto 80). */
+  quotePercentile: number;
   lines: BudgetLine[];
-  hours: { min: number; likely: number; max: number };
-  subtotal: { min: number; likely: number; max: number };
-  contingency: { min: number; likely: number; max: number };
-  total: { min: number; likely: number; max: number };
+  hours: BudgetFigures;
+  subtotal: BudgetFigures;
+  contingency: BudgetFigures;
+  total: BudgetFigures;
+  timeline: BudgetTimeline;
 }
 
 export interface Ticket {

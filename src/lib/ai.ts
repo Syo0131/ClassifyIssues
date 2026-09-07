@@ -4,6 +4,7 @@ import {
   ChatMessage,
   DevDataTable,
   DevModule,
+  DevPhase,
   DevRequirement,
   DevTableColumn,
   DevelopmentBrief,
@@ -48,8 +49,9 @@ Reglas OBLIGATORIAS:
 - NUNCA devuelvas importes, precios ni divisas. Estima SOLO en horas de trabajo; el coste lo calcula otro sistema.
 - Estima con tres puntos por módulo: hoursMin (optimista), hoursLikely (probable), hoursMax (pesimista). Debe cumplirse hoursMin <= hoursLikely <= hoursMax.
 - Las horas deben incluir el trabajo real de ingeniería: análisis, implementación, pruebas y despliegue. Incluye siempre un módulo de QA/pruebas y otro de gestión/coordinación.
-- Los módulos, en conjunto, deben cubrir todos los requisitos funcionales "must". No dejes un "must" sin trabajo asignado.
+- Los módulos, en conjunto, deben cubrir todos los requisitos funcionales "must". No dejes un "must" sin trabajo asignado: cada módulo declara en "requirementIds" los RF-xx que ayuda a entregar, y todo "must" debe aparecer en al menos uno.
 - Entre 3 y 10 módulos. Entre 3 y 12 requisitos funcionales.
+- Divide el trabajo en FASES de entrega. La fase 1 es un MVP: la porción más pequeña que ya aporta valor y se puede poner en producción. Las fases siguientes son incrementos. Cada módulo lleva su número de fase ("phase"). Todo "must" debería estar en la fase 1 salvo que expliques en "assumptions" por qué se pospone.
 
 Guía de ESTIMACIÓN (órdenes de magnitud orientativos para trabajo de desarrollo real; ajústalos al contexto y al stack, NO son límites rígidos, sólo evitan estimaciones irreales):
 - Pantalla/CRUD sencillo: 8-20 h.  Formulario/flujo con validaciones: 12-30 h.
@@ -59,14 +61,14 @@ Guía de ESTIMACIÓN (órdenes de magnitud orientativos para trabajo de desarrol
 - La dispersión debe reflejar incertidumbre real: hoursMax suele ser >= 1.3x hoursMin, más ancho cuanto menos claro esté el módulo. NO devuelvas hoursMin = hoursLikely = hoursMax salvo tareas triviales y muy conocidas.
 - "complexity" según el TOTAL de hoursLikely: "low" si < 40 h, "medium" si 40-120 h, "high" si > 120 h.
 
-Campos del JSON (lista COMPLETA — el objeto debe tener las 18 claves, aunque algunas queden en array vacío o cadena vacía):
+Campos del JSON (lista COMPLETA — el objeto debe tener las 20 claves, aunque algunas queden en array vacío o cadena vacía):
 - "title": Título corto del proyecto.
 - "problem": Problema o necesidad de negocio, en 2-3 frases.
 - "goal": Objetivo medible del proyecto, en 1-2 frases.
 - "targetUsers": Array de perfiles de usuario destinatarios.
 - "scope": Array de lo que SÍ entra en el alcance.
 - "outOfScope": Array de lo que NO entra (explícitamente excluido).
-- "functionalRequirements": Array de objetos { "id": "RF-01", "title": "...", "description": "...", "priority": "must"|"should"|"could" }.
+- "functionalRequirements": Array de objetos { "id": "RF-01", "title": "...", "description": "...", "priority": "must"|"should"|"could", "acceptanceCriteria": ["...", "..."] }. "acceptanceCriteria": 2 a 4 criterios de aceptación verificables, en lenguaje de negocio (qué se comprueba para dar el requisito por hecho). Los "must" SIEMPRE llevan criterios.
 - "successMetrics": Array de métricas para saber si funcionó.
 - "assumptions": Array de supuestos asumidos.
 - "risks": Array de riesgos con su posible mitigación. SIEMPRE al menos 1, entre 1 y 5 — todo desarrollo tiene alguno (complejidad técnica, dependencia de terceros/pasarelas, plazos ajustados, adopción por los usuarios, seguridad de los datos, alcance poco definido...). No lo dejes vacío salvo un cambio trivial de una línea.
@@ -77,7 +79,8 @@ Campos del JSON (lista COMPLETA — el objeto debe tener las 18 claves, aunque a
 - "integrations": Array de sistemas externos o APIs necesarios.
 - "nonFunctional": Array de requisitos no funcionales (rendimiento, seguridad, accesibilidad, disponibilidad).
 - "flowDiagram": String en sintaxis Mermaid con el flujo principal, si aporta valor visual (ver reglas abajo). Si no aplica, usa "".
-- "modules": Array de objetos { "name": "...", "description": "...", "hoursMin": n, "hoursLikely": n, "hoursMax": n }. La estimación de esfuerzo del proyecto — ver "Guía de ESTIMACIÓN" arriba. Este campo es TAN OBLIGATORIO como los demás; no lo omitas.
+- "modules": Array de objetos { "id": "M-01", "name": "...", "description": "...", "hoursMin": n, "hoursLikely": n, "hoursMax": n, "phase": 1, "requirementIds": ["RF-01", ...] }. La estimación de esfuerzo del proyecto — ver "Guía de ESTIMACIÓN" arriba. "id" correlativo (M-01, M-02...). "phase" el número de fase de entrega. "requirementIds" los RF-xx que cubre (puede ser [] para módulos transversales como QA o gestión). Este campo es TAN OBLIGATORIO como los demás; no lo omitas.
+- "phases": Array de objetos { "number": 1, "name": "MVP", "goal": "..." }. Entre 1 y 4 fases. La fase 1 es el MVP. "goal" describe qué entrega esa fase.
 - "complexity": "low" | "medium" | "high".
 - "openQuestions": Array de preguntas abiertas para el cliente.
 
@@ -118,6 +121,25 @@ Reglas:
 
 Responde SOLO con JSON válido en ESPAÑOL con la forma { "done": boolean, "question": string|null }.`;
 
+const DEV_CRITIQUE_SYSTEM_PROMPT = `Actúas como un Delivery Lead senior y escéptico. Recibes un borrador de PRD/TRD con su estimación de esfuerzo (en horas, estimación de tres puntos por módulo). Tu trabajo es una revisión crítica: detectar dónde la estimación está por debajo o por encima de lo razonable, qué riesgos y preguntas faltan, y ajustar SOLO lo que haga falta.
+
+Criterios:
+- Sé concreto. No reescribas el documento; propón ajustes puntuales de horas con su motivo.
+- Sospecha de la infraestimación: integración con sistemas existentes, migración de datos, QA insuficiente (<15% del total), gestión insuficiente (<8%), edge cases y despliegue suelen quedarse cortos.
+- Sospecha también de la sobreestimación en tareas triviales o muy conocidas.
+- Si un módulo está bien, no lo toques.
+- "verdict": "subestimado" si el total realista es claramente mayor, "sobreestimado" si claramente menor, "ok" si el rango es defendible.
+
+Devuelve SOLO JSON válido en ESPAÑOL con esta forma exacta:
+{
+  "estimateAdjustments": [ { "moduleId": "M-01", "field": "hoursMin"|"hoursLikely"|"hoursMax", "newValue": number, "reason": "..." } ],
+  "addedRisks": ["..."],
+  "addedOpenQuestions": ["..."],
+  "addedAssumptions": ["..."],
+  "verdict": "ok"|"subestimado"|"sobreestimado"
+}
+Todos los arrays pueden ir vacíos si no hay nada que añadir o ajustar.`;
+
 declare global {
   // eslint-disable-next-line no-var
   var __geminiModels: Map<string, import('@google/generative-ai').GenerativeModel> | undefined;
@@ -131,7 +153,7 @@ declare global {
  * tokens, así que no pueden compartir instancia. La caché entera se descarta si
  * cambia la API key o el nombre del modelo.
  */
-type ModelProfile = 'incident' | 'development' | 'chat';
+type ModelProfile = 'incident' | 'development' | 'chat' | 'critique';
 
 const MODEL_PROFILES: Record<ModelProfile, { temperature: number; maxOutputTokens: number }> = {
   incident: { temperature: 0.3, maxOutputTokens: 1000 },
@@ -141,6 +163,9 @@ const MODEL_PROFILES: Record<ModelProfile, { temperature: number; maxOutputToken
   // El chat devuelve una pregunta corta, pero gemini-flash gasta tokens en
   // "thinking" interno que cuentan contra este límite; 500 truncaba el JSON.
   chat: { temperature: 0.5, maxOutputTokens: 2000 },
+  // Segunda pasada: ajustes puntuales sobre un borrador ya hecho. Temperatura
+  // baja (queremos criterio, no creatividad); salida moderada.
+  critique: { temperature: 0.3, maxOutputTokens: 6000 },
 };
 
 function getGeminiModelCached(profile: ModelProfile) {
@@ -166,7 +191,13 @@ function getGeminiModelCached(profile: ModelProfile) {
   if (cached) return cached;
 
   const systemInstruction =
-    profile === 'development' ? DEV_SYSTEM_PROMPT : profile === 'chat' ? DEV_CHAT_SYSTEM_PROMPT : SYSTEM_PROMPT;
+    profile === 'development'
+      ? DEV_SYSTEM_PROMPT
+      : profile === 'chat'
+        ? DEV_CHAT_SYSTEM_PROMPT
+        : profile === 'critique'
+          ? DEV_CRITIQUE_SYSTEM_PROMPT
+          : SYSTEM_PROMPT;
   const cfg = MODEL_PROFILES[profile];
 
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -184,7 +215,25 @@ function getGeminiModelCached(profile: ModelProfile) {
 }
 
 // ─── Retry Helper ─────────────────────────────────────────────────────────────
-// Retries a function with exponential backoff for transient errors (429, 503).
+// Reintenta con backoff exponencial ante errores transitorios. El SDK de Gemini
+// (@google/generative-ai) no expone un `.status` numérico: mete el código HTTP en
+// el texto del error ("[429 Too Many Requests]" / "GoogleGenerativeAIFetchError:
+// ... 503 ..."). Además los cortes de red (ECONNRESET/ETIMEDOUT) también merecen
+// reintento. Antes esto se comprobaba con `error.status === 429`, que nunca
+// coincidía, así que el backoff era código muerto.
+
+function isRetryableError(error: unknown): boolean {
+  const status = (error as { status?: number; statusText?: string })?.status;
+  if (status === 429 || status === 500 || status === 503) return true;
+
+  const message = `${(error as { message?: string })?.message ?? ''} ${(error as { statusText?: string })?.statusText ?? ''}`;
+  if (/\b(429|500|503)\b/.test(message)) return true;
+  if (/too many requests|resource has been exhausted|overloaded|unavailable/i.test(message)) return true;
+
+  const code = (error as { code?: string; cause?: { code?: string } })?.code
+    ?? (error as { cause?: { code?: string } })?.cause?.code;
+  return code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'ECONNREFUSED' || code === 'EAI_AGAIN';
+}
 
 async function withRetry<T>(
   fn: () => Promise<T>,
@@ -195,16 +244,14 @@ async function withRetry<T>(
     try {
       return await fn();
     } catch (error: unknown) {
-      const status = (error as { status?: number })?.status;
-      const isRetryable = status === 503 || status === 429;
-
-      if (!isRetryable || attempt === maxAttempts) {
+      if (!isRetryableError(error) || attempt === maxAttempts) {
         throw error;
       }
 
       const delay = baseDelayMs * Math.pow(2, attempt - 1);
       console.warn(
-        `Gemini API ${status} error (attempt ${attempt}/${maxAttempts}). Retrying in ${delay}ms...`
+        `Gemini API error transitorio (intento ${attempt}/${maxAttempts}). Reintentando en ${delay}ms...`,
+        (error as { message?: string })?.message ?? error
       );
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
@@ -522,14 +569,137 @@ export async function analyzeDevelopmentRequest(
       ]);
     }
 
-    return {
+    const validated: DevelopmentSpec = {
       ...validateDevelopmentSpec(parsed, text, extraWarnings),
       conversation: brief?.conversation,
       source: 'gemini',
     };
+
+    // Segunda pasada: un "delivery lead" revisa la estimación y el alcance.
+    // Nunca lanza; si falla deja el borrador tal cual con un aviso.
+    return await critiqueDevelopmentSpec(validated);
   } catch (error) {
     console.error('Gemini development analysis error, falling back to mock:', error);
     return mockDevelopmentSpec(text, brief);
+  }
+}
+
+// ─── Segunda pasada de revisión ──────────────────────────────────────────────
+
+interface EstimateAdjustment {
+  moduleId?: unknown;
+  field?: unknown;
+  newValue?: unknown;
+  reason?: unknown;
+}
+interface CritiqueResponse {
+  estimateAdjustments?: EstimateAdjustment[];
+  addedRisks?: unknown;
+  addedOpenQuestions?: unknown;
+  addedAssumptions?: unknown;
+  verdict?: unknown;
+}
+
+/** Entrada compacta para el revisor: sólo lo que necesita para criticar. */
+function summarizeSpecForCritique(spec: DevelopmentSpec): string {
+  return JSON.stringify({
+    title: spec.title,
+    goal: spec.goal,
+    complexity: spec.complexity,
+    functionalRequirements: spec.functionalRequirements.map(r => ({ id: r.id, title: r.title, priority: r.priority })),
+    modules: spec.modules.map(m => ({
+      id: m.id, name: m.name, phase: m.phase,
+      hoursMin: m.hoursMin, hoursLikely: m.hoursLikely, hoursMax: m.hoursMax,
+    })),
+    assumptions: spec.assumptions,
+    risks: spec.risks,
+    openQuestions: spec.openQuestions,
+  });
+}
+
+/** Reaplica la coherencia min <= likely <= max tras un ajuste puntual. */
+function reconcileModuleHours(m: DevModule): DevModule {
+  const likely = Math.max(1, Math.round(m.hoursLikely));
+  const min = Math.min(Math.max(1, Math.round(m.hoursMin)), likely);
+  const max = Math.max(Math.round(m.hoursMax), likely, min + 1);
+  return { ...m, hoursMin: min, hoursLikely: likely, hoursMax: max };
+}
+
+export async function critiqueDevelopmentSpec(spec: DevelopmentSpec): Promise<DevelopmentSpec> {
+  if (process.env.DEV_CRITIQUE_PASS === 'off') return spec;
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === 'mock' || apiKey === '' || spec.source !== 'gemini') return spec;
+
+  const failNote = 'La segunda revisión IA no se pudo completar; el borrador no fue reajustado.';
+
+  try {
+    const model = getGeminiModelCached('critique');
+    const result = await withRetry(() => model.generateContent(summarizeSpecForCritique(spec)));
+    const content = result.response.text();
+    if (!content) return { ...spec, warnings: [failNote, ...spec.warnings] };
+
+    const parsed = JSON.parse(content) as CritiqueResponse;
+
+    const modulesById = new Map(spec.modules.map(m => [m.id.toUpperCase(), { ...m }]));
+    const appliedReasons: string[] = [];
+    const fields = ['hoursMin', 'hoursLikely', 'hoursMax'] as const;
+
+    for (const adj of Array.isArray(parsed.estimateAdjustments) ? parsed.estimateAdjustments : []) {
+      const id = typeof adj.moduleId === 'string' ? adj.moduleId.trim().toUpperCase() : '';
+      const field = adj.field as (typeof fields)[number];
+      const target = modulesById.get(id);
+      const value = clampHours(adj.newValue, NaN);
+      if (!target || !fields.includes(field) || !Number.isFinite(value)) continue;
+      target[field] = value;
+      const reason = typeof adj.reason === 'string' ? adj.reason.trim() : '';
+      if (reason) appliedReasons.push(`${target.name}: ${reason}`);
+      else appliedReasons.push(target.name);
+    }
+
+    const modules = spec.modules.map(m => reconcileModuleHours(modulesById.get(m.id.toUpperCase()) ?? m));
+
+    const dedupAppend = (base: string[], extra: string[], cap: number) => {
+      const seen = new Set(base.map(s => s.toLowerCase().trim()));
+      const out = [...base];
+      for (const item of extra) {
+        const key = item.toLowerCase().trim();
+        if (key && !seen.has(key) && out.length < cap) {
+          seen.add(key);
+          out.push(item);
+        }
+      }
+      return out;
+    };
+
+    const risks = dedupAppend(spec.risks, toStringArray(parsed.addedRisks), 12);
+    const openQuestions = dedupAppend(spec.openQuestions, toStringArray(parsed.addedOpenQuestions), 12);
+    const assumptions = dedupAppend(spec.assumptions, toStringArray(parsed.addedAssumptions), 15);
+
+    const verdict = typeof parsed.verdict === 'string' ? parsed.verdict.toLowerCase() : '';
+    const critiqueWarnings: string[] = [];
+    if (appliedReasons.length > 0) {
+      critiqueWarnings.push(
+        `Segunda revisión IA: ${appliedReasons.length} estimación(es) ajustada(s) — ${appliedReasons.slice(0, 5).join('; ')}.`
+      );
+    }
+    if (verdict === 'subestimado' || verdict === 'sobreestimado') {
+      critiqueWarnings.push(`Veredicto de la segunda revisión: la estimación original parece ${verdict}.`);
+    }
+    if (critiqueWarnings.length === 0) {
+      critiqueWarnings.push('Segunda revisión IA completada: sin ajustes de estimación.');
+    }
+
+    return {
+      ...spec,
+      modules,
+      risks,
+      openQuestions,
+      assumptions,
+      warnings: [...spec.warnings, ...critiqueWarnings],
+    };
+  } catch (error) {
+    console.error('critiqueDevelopmentSpec falló; se conserva el borrador sin reajustar:', error);
+    return { ...spec, warnings: [failNote, ...spec.warnings] };
   }
 }
 
@@ -586,6 +756,7 @@ function normalizeRequirements(value: unknown): DevRequirement[] {
       priority: validPriorities.includes(item.priority as RequirementPriority)
         ? (item.priority as RequirementPriority)
         : 'should',
+      acceptanceCriteria: toStringArray(item.acceptanceCriteria).slice(0, 6),
     }));
 }
 
@@ -602,6 +773,16 @@ function clampHours(value: unknown, fallback: number): number {
  * las estimaciones degeneradas (min = likely = max), que dan falsa precisión al
  * presupuesto, y lo anota en `warnings` para el revisor.
  */
+function toIdArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(
+    value
+      .filter((v): v is string => typeof v === 'string')
+      .map(v => v.trim().toUpperCase())
+      .filter(Boolean)
+  )].slice(0, 20);
+}
+
 function normalizeModules(value: unknown, warnings: string[]): DevModule[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -612,6 +793,8 @@ function normalizeModules(value: unknown, warnings: string[]): DevModule[] {
       let min = Math.min(clampHours(item.hoursMin, Math.max(1, Math.round(likely * 0.7))), likely);
       let max = Math.max(clampHours(item.hoursMax, Math.round(likely * 1.5)), likely);
       const name = toText(item.name, `Módulo ${index + 1}`);
+      const phaseRaw = Number(item.phase);
+      const phase = Number.isFinite(phaseRaw) && phaseRaw >= 1 ? Math.min(5, Math.round(phaseRaw)) : 1;
 
       // min === max sólo ocurre si el modelo dio los tres valores iguales: no es
       // un rango real. Lo ensanchamos a una banda orientativa y avisamos.
@@ -621,17 +804,78 @@ function normalizeModules(value: unknown, warnings: string[]): DevModule[] {
         warnings.push(`Estimación del módulo "${name}" sin rango real (min=max); se ensanchó a una banda orientativa, revísala.`);
       }
 
-      return { name, description: toText(item.description, ''), hoursMin: min, hoursLikely: likely, hoursMax: max };
+      return {
+        id: toText(item.id, `M-${String(index + 1).padStart(2, '0')}`).toUpperCase(),
+        name,
+        description: toText(item.description, ''),
+        hoursMin: min,
+        hoursLikely: likely,
+        hoursMax: max,
+        phase,
+        requirementIds: toIdArray(item.requirementIds),
+      };
     });
 }
 
 function fallbackModules(): DevModule[] {
   return [
-    { name: 'Análisis y diseño funcional', description: 'Refinar requisitos con el cliente y diseñar la solución.', hoursMin: 8, hoursLikely: 12, hoursMax: 20 },
-    { name: 'Implementación', description: 'Desarrollo de la funcionalidad solicitada.', hoursMin: 24, hoursLikely: 40, hoursMax: 70 },
-    { name: 'Pruebas y QA', description: 'Pruebas funcionales, correcciones y validación con el cliente.', hoursMin: 8, hoursLikely: 12, hoursMax: 20 },
-    { name: 'Despliegue y gestión', description: 'Puesta en producción, documentación y coordinación.', hoursMin: 4, hoursLikely: 8, hoursMax: 14 },
+    { id: 'M-01', name: 'Análisis y diseño funcional', description: 'Refinar requisitos con el cliente y diseñar la solución.', hoursMin: 8, hoursLikely: 12, hoursMax: 20, phase: 1, requirementIds: [] },
+    { id: 'M-02', name: 'Implementación', description: 'Desarrollo de la funcionalidad solicitada.', hoursMin: 24, hoursLikely: 40, hoursMax: 70, phase: 1, requirementIds: [] },
+    { id: 'M-03', name: 'Pruebas y QA', description: 'Pruebas funcionales, correcciones y validación con el cliente.', hoursMin: 8, hoursLikely: 12, hoursMax: 20, phase: 1, requirementIds: [] },
+    { id: 'M-04', name: 'Despliegue y gestión', description: 'Puesta en producción, documentación y coordinación.', hoursMin: 4, hoursLikely: 8, hoursMax: 14, phase: 1, requirementIds: [] },
   ];
+}
+
+/**
+ * Construye la lista de fases: parte de las fases presentes en los módulos ya
+ * normalizados y les pega nombre/objetivo de lo que devolvió la IA en "phases".
+ * Garantiza que exista la fase 1.
+ */
+function normalizePhases(value: unknown, modules: DevModule[], warnings: string[]): DevPhase[] | undefined {
+  const meta = new Map<number, { name: string; goal: string }>();
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (!item || typeof item !== 'object') continue;
+      const obj = item as Record<string, unknown>;
+      const number = Number(obj.number);
+      if (!Number.isFinite(number) || number < 1) continue;
+      meta.set(Math.round(number), {
+        name: toText(obj.name, ''),
+        goal: toText(obj.goal, ''),
+      });
+    }
+  }
+
+  const numbers = [...new Set(modules.map(m => m.phase))].sort((a, b) => a - b);
+  if (numbers.length === 0) return undefined;
+  if (!numbers.includes(1)) {
+    warnings.push('Ningún módulo está asignado a la fase 1 (MVP); revisa el desglose de fases.');
+  }
+
+  const phases = numbers.map(number => ({
+    number,
+    name: meta.get(number)?.name || (number === 1 ? 'MVP' : `Fase ${number}`),
+    goal: meta.get(number)?.goal || '',
+  }));
+
+  return phases.length > 0 ? phases : undefined;
+}
+
+/**
+ * Por cada requisito "must" que ningún módulo declara cubrir en
+ * `requirementIds`, avisa al revisor. El prompt pide esta cobertura pero el
+ * modelo la incumple a menudo.
+ */
+function validateTraceability(modules: DevModule[], requirements: DevRequirement[], warnings: string[]): void {
+  const covered = new Set(modules.flatMap(m => m.requirementIds));
+  const uncovered = requirements
+    .filter(r => r.priority === 'must' && !covered.has(r.id.toUpperCase()))
+    .map(r => r.id);
+  // Sólo avisamos si la IA usó trazabilidad en algún módulo; si no la usó en
+  // ninguno, es un spec antiguo o un fallo global que ya se cubre con otro aviso.
+  if (uncovered.length > 0 && covered.size > 0) {
+    warnings.push(`Requisitos "must" sin módulo que los cubra (${uncovered.join(', ')}); revisa el desglose de módulos.`);
+  }
 }
 
 const PG_COLUMN_TYPES: readonly PgColumnType[] = [
@@ -862,6 +1106,17 @@ function validateDevelopmentSpec(
     warnings.push('La IA no aportó desglose de módulos; la estimación usa un desglose por defecto, revísala.');
   }
 
+  const effectiveModules = modules.length > 0 ? modules : fallbackModules();
+  const phases = normalizePhases(spec.phases, effectiveModules, warnings);
+  validateTraceability(effectiveModules, requirements, warnings);
+
+  const mustWithoutCriteria = requirements
+    .filter(r => r.priority === 'must' && r.acceptanceCriteria.length === 0)
+    .map(r => r.id);
+  if (mustWithoutCriteria.length > 0 && requirements.some(r => r.acceptanceCriteria.length > 0)) {
+    warnings.push(`Requisitos "must" sin criterios de aceptación (${mustWithoutCriteria.join(', ')}); complétalos en la revisión.`);
+  }
+
   return {
     title: toText(spec.title, originalText.trim().slice(0, 60) || 'Nuevo desarrollo'),
     problem: toText(spec.problem, 'No se detalló el problema de negocio en la solicitud.'),
@@ -878,6 +1133,7 @@ function validateDevelopmentSpec(
               title: 'Requisito pendiente de elaborar',
               description: 'La solicitud no aportó detalle suficiente para derivar requisitos.',
               priority: 'must',
+              acceptanceCriteria: [],
             },
           ],
     successMetrics: toStringArray(spec.successMetrics),
@@ -890,7 +1146,8 @@ function validateDevelopmentSpec(
     nonFunctional: toStringArray(spec.nonFunctional),
     dataTables: dataTables.length > 0 ? dataTables : undefined,
     flowDiagram,
-    modules: modules.length > 0 ? modules : fallbackModules(),
+    modules: effectiveModules,
+    phases,
     complexity: validComplexity.includes(spec.complexity as 'low' | 'medium' | 'high')
       ? (spec.complexity as 'low' | 'medium' | 'high')
       : 'medium',
@@ -935,6 +1192,7 @@ function mockDevelopmentSpec(
       title: sentence.slice(0, 70),
       description: sentence,
       priority: index === 0 ? 'must' : index < 3 ? 'should' : 'could',
+      acceptanceCriteria: [],
     })
   );
 
@@ -964,6 +1222,7 @@ function mockDevelopmentSpec(
     integrations: [],
     nonFunctional: ['Rendimiento, seguridad y accesibilidad según los estándares del proyecto'],
     modules,
+    phases: [{ number: 1, name: 'Entrega única', goal: 'Alcance completo pendiente de fasear en la revisión.' }],
     complexity,
     openQuestions: [
       '¿Cuál es el criterio de aceptación para dar por cerrado el desarrollo?',

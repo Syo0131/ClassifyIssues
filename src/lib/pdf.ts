@@ -351,10 +351,10 @@ function drawBudgetTable(doc: Doc, budget: Budget): void {
   drawTableRow(
     doc,
     [
-      'Subtotal',
-      `${budget.hours.min} - ${budget.hours.max} h`,
-      `${budget.hours.likely} h`,
-      formatMoney(budget.subtotal.likely, budget.currency),
+      'Subtotal (valor esperado)',
+      `${Math.round(budget.hours.min)} - ${Math.round(budget.hours.max)} h`,
+      `${Math.round(budget.hours.expected)} h`,
+      formatMoney(budget.subtotal.expected, budget.currency),
     ],
     { bold: true }
   );
@@ -363,16 +363,27 @@ function drawBudgetTable(doc: Doc, budget: Budget): void {
     `Contingencia (${budget.contingencyPct}%)`,
     '',
     '',
-    formatMoney(budget.contingency.likely, budget.currency),
+    formatMoney(budget.contingency.expected, budget.currency),
   ]);
 
   drawTableRow(
     doc,
     [
-      'TOTAL ESTIMADO',
+      'TOTAL - VALOR ESPERADO',
       '',
       '',
-      formatMoney(budget.total.likely, budget.currency),
+      formatMoney(budget.total.expected, budget.currency),
+    ],
+    { bold: true }
+  );
+
+  drawTableRow(
+    doc,
+    [
+      `TOTAL - P${budget.quotePercentile} (conservador)`,
+      '',
+      `${Math.round(budget.hours.p80)} h`,
+      formatMoney(budget.total.p80, budget.currency),
     ],
     { bold: true }
   );
@@ -380,9 +391,31 @@ function drawBudgetTable(doc: Doc, budget: Budget): void {
   doc.y -= 8;
   drawParagraph(
     doc,
-    `Rango del presupuesto: ${formatMoney(budget.total.min, budget.currency)} - ${formatMoney(budget.total.max, budget.currency)} (contingencia del ${budget.contingencyPct}% incluida).`,
+    `Rango del presupuesto: ${formatMoney(budget.total.min, budget.currency)} - ${formatMoney(budget.total.max, budget.currency)}. Se recomienda cotizar contra el valor P${budget.quotePercentile} (${formatMoney(budget.total.p80, budget.currency)}).`,
     { size: 9.5, font: doc.bold }
   );
+  drawParagraph(doc, budget.contingencyRationale, { size: 8.5, color: COLOR_MUTED });
+  drawParagraph(
+    doc,
+    `Fiabilidad de la estimación: ${{ low: 'baja', medium: 'media', high: 'alta' }[budget.estimateConfidence]}.`,
+    { size: 8.5, color: COLOR_MUTED }
+  );
+
+  const t = budget.timeline;
+  drawParagraph(
+    doc,
+    `Calendario aproximado: ${t.weeksExpected} semana(s) (valor esperado) / ${t.weeksP80} semana(s) (P${budget.quotePercentile}), asumiendo ${t.teamSize} persona(s) a ${t.hoursPerWeek} h/semana. Las fases son secuenciales; con trabajo en paralelo puede comprimirse.`,
+    { size: 8.5, color: COLOR_MUTED }
+  );
+  if (t.phases.length > 1) {
+    for (const phase of t.phases) {
+      drawParagraph(
+        doc,
+        `Fase ${phase.number} - ${phase.name}: ${phase.hours} h aprox., ~${phase.weeks} semana(s).`,
+        { size: 8.5, indent: 12, color: COLOR_MUTED, gap: 2 }
+      );
+    }
+  }
   drawParagraph(
     doc,
     `Tarifa aplicada: ${formatMoney(budget.hourlyRate, budget.currency)}/hora. Estimación orientativa, no vinculante: se confirmará tras el refinamiento de requisitos con el cliente.`,
@@ -421,7 +454,7 @@ function drawCoverHeader(doc: Doc, ticket: Ticket, spec: DevelopmentSpec, bandLa
   drawKeyValue(doc, 'Proyecto:', ticket.project || 'General');
   drawKeyValue(doc, 'Solicitante:', ticket.username || `Usuario ${ticket.user_id}`);
   drawKeyValue(doc, 'Fecha:', created.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' }));
-  drawKeyValue(doc, 'Complejidad:', { low: 'Baja', medium: 'Media', high: 'Alta' }[spec.complexity]);
+  drawKeyValue(doc, 'Complejidad:', { low: 'Baja', medium: 'Media', high: 'Alta' }[spec.complexity] ?? 'Media');
   drawKeyValue(
     doc,
     'Generado por:',
@@ -531,13 +564,18 @@ export async function buildDevelopmentPdf(
 
     drawHeading(doc, `${n}.6 Requisitos funcionales`, 2);
     for (const requirement of spec.functionalRequirements) {
+      const priorityLabel = REQUIREMENT_PRIORITY_LABEL[requirement.priority] ?? requirement.priority;
       drawParagraph(
         doc,
-        `${requirement.id} · ${requirement.title}  [${REQUIREMENT_PRIORITY_LABEL[requirement.priority]}]`,
+        `${requirement.id} · ${requirement.title}  [${priorityLabel}]`,
         { font: doc.bold, size: 10, gap: 1 }
       );
       if (requirement.description) {
         drawParagraph(doc, requirement.description, { size: 9.5, indent: 12, color: COLOR_MUTED, gap: 6 });
+      }
+      if (requirement.acceptanceCriteria?.length > 0) {
+        drawParagraph(doc, 'Criterios de aceptación:', { size: 8.5, indent: 12, color: COLOR_MUTED, gap: 2 });
+        drawBullets(doc, requirement.acceptanceCriteria);
       }
     }
 
@@ -600,9 +638,30 @@ export async function buildDevelopmentPdf(
     drawHeading(doc, `${n}. Estimación y presupuesto aproximado`, 1);
     drawBudgetTable(doc, calculateBudget(spec));
 
-    drawHeading(doc, `${n}.1 Detalle de módulos`, 2);
+    let sub = 0;
+
+    if (spec.phases && spec.phases.length > 1) {
+      sub += 1;
+      drawHeading(doc, `${n}.${sub} Fases de entrega`, 2);
+      for (const phase of spec.phases) {
+        const phaseModules = spec.modules.filter(m => (m.phase ?? 1) === phase.number);
+        drawParagraph(doc, `Fase ${phase.number} - ${phase.name}`, { font: doc.bold, size: 10, gap: 1 });
+        if (phase.goal) {
+          drawParagraph(doc, phase.goal, { size: 9.5, indent: 12, color: COLOR_MUTED, gap: 4 });
+        }
+        drawBullets(
+          doc,
+          phaseModules.map(m => `${m.name} (${m.hoursLikely} h)`),
+          'Sin módulos asignados a esta fase.'
+        );
+      }
+    }
+
+    sub += 1;
+    drawHeading(doc, `${n}.${sub} Detalle de módulos`, 2);
     for (const item of spec.modules) {
-      drawParagraph(doc, `${item.name} (${item.hoursLikely} h)`, { font: doc.bold, size: 10, gap: 1 });
+      const rf = item.requirementIds?.length ? `  ·  cubre ${item.requirementIds.join(', ')}` : '';
+      drawParagraph(doc, `${item.name} (${item.hoursLikely} h)${rf}`, { font: doc.bold, size: 10, gap: 1 });
       if (item.description) {
         drawParagraph(doc, item.description, { size: 9.5, indent: 12, color: COLOR_MUTED, gap: 6 });
       }
